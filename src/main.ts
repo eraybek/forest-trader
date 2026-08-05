@@ -60,6 +60,12 @@ interface TavernData {
   deliveryClock: number;
   delivering: boolean;
   barrelPosition: THREE.Vector3;
+  drinkPickupPosition: THREE.Vector3;
+  drinkDropPosition: THREE.Vector3;
+  paymentPosition: THREE.Vector3;
+  drinkProductionPile: THREE.Group;
+  counterDrinkPile: THREE.Group;
+  paymentPile: THREE.Group;
   entrancePosition: THREE.Vector3;
   exitPosition: THREE.Vector3;
   queueOrigin: THREE.Vector3;
@@ -93,6 +99,8 @@ interface CustomerData {
   drinkClock: number;
   walkClock: number;
   mug: THREE.Group;
+  requestedDrinks: number;
+  requestBubble: THREE.Sprite;
 }
 
 interface TipData {
@@ -419,6 +427,11 @@ const state = {
   gold: 0,
   carried: 0,
   pendingCollection: 0,
+  carriedDrinks: 0,
+  pendingDrinkCollection: 0,
+  barrelDrinks: 0,
+  counterDrinks: 0,
+  pendingGold: 0,
   stock: 0,
   capacity: 5,
   damage: 1,
@@ -460,6 +473,39 @@ const makeLogMesh = (scale = 1) => {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+};
+
+const makeDrinkMug = (visible = true) => {
+  const mug = new THREE.Group();
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.105, 0.09, 0.25, 9),
+    new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
+  );
+  cup.position.y = 0.12;
+  cup.castShadow = true;
+  const drink = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.088, 0.088, 0.018, 9),
+    new THREE.MeshStandardMaterial({ color: 0xc87826, roughness: 0.55 }),
+  );
+  drink.position.y = 0.25;
+  const handle = new THREE.Mesh(
+    new THREE.TorusGeometry(0.07, 0.018, 6, 10, Math.PI * 1.35),
+    new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
+  );
+  handle.position.set(0.105, 0.14, 0);
+  handle.rotation.z = -Math.PI / 2;
+  mug.add(cup, drink, handle);
+  mug.visible = visible;
+  return mug;
+};
+
+const makeBanknoteMesh = () => {
+  const note = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.045, 0.21),
+    new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.72 }),
+  );
+  note.castShadow = true;
+  return note;
 };
 
 const player = new THREE.Group();
@@ -563,17 +609,19 @@ const stackGroup = new THREE.Group();
 stackGroup.position.set(0, 0, 0.68);
 player.add(stackGroup);
 
-const stackMeshes: THREE.Mesh[] = [];
+const stackMeshes: THREE.Object3D[] = [];
 
 const rebuildPlayerStack = () => {
   for (const mesh of stackMeshes) stackGroup.remove(mesh);
   stackMeshes.length = 0;
-  for (let index = 0; index < state.carried; index += 1) {
-    const log = makeLogMesh(0.78);
-    log.position.set(0, 0.34 + index * 0.235, 0);
-    log.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
-    stackGroup.add(log);
-    stackMeshes.push(log);
+  const carryingDrinks = state.carriedDrinks > 0;
+  const amount = carryingDrinks ? state.carriedDrinks : state.carried;
+  for (let index = 0; index < amount; index += 1) {
+    const item = carryingDrinks ? makeDrinkMug() : makeLogMesh(0.78);
+    item.position.set(0, 0.34 + index * 0.235, 0);
+    item.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
+    stackGroup.add(item);
+    stackMeshes.push(item);
   }
 };
 
@@ -902,8 +950,7 @@ const createTavern = (position: THREE.Vector3) => {
     createTable(4.2, 4.5, false),
   ];
 
-  // Fıçı şimdilik otomatik servisin görsel kaynağıdır. İleride stok,
-  // içecek çeşidi ve barmen geliştirmeleri bu nesneye bağlanabilir.
+  // İlk fıçı servis tezgâhının arkasında gerçek üretim kaynağıdır.
   const barrelPosition = position.clone().add(new THREE.Vector3(-5.6, 0, -1.05));
   const barrel = new THREE.Group();
   barrel.position.copy(group.worldToLocal(barrelPosition.clone()));
@@ -920,6 +967,73 @@ const createTavern = (position: THREE.Vector3) => {
   const tap = addBox(barrel, new THREE.Vector3(0.12, 0.12, 0.38), new THREE.Vector3(0, 0.72, 0.72), darkTrunkMaterial);
   tap.rotation.x = -0.15;
   furnitureStage.add(barrel);
+
+  // Fıçının önündeki mavi alan üretilen içeceklerin en fazla 10 adet
+  // biriktiği toplama noktasıdır.
+  const drinkPickupPosition = position.clone().add(new THREE.Vector3(-4.65, 0, -1.05));
+  const productionRing = new THREE.Group();
+  productionRing.position.set(-4.65, 0.035, -1.05);
+  const productionFill = new THREE.Mesh(
+    new THREE.CircleGeometry(1.02, 32),
+    new THREE.MeshBasicMaterial({ color: 0x55b9d2, transparent: true, opacity: 0.24, side: THREE.DoubleSide }),
+  );
+  const productionEdge = new THREE.Mesh(
+    new THREE.RingGeometry(0.93, 1.05, 32),
+    new THREE.MeshBasicMaterial({ color: 0xe8fbff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+  );
+  productionFill.rotation.x = -Math.PI / 2;
+  productionEdge.rotation.x = -Math.PI / 2;
+  productionEdge.position.y = 0.01;
+  productionRing.add(productionFill, productionEdge);
+  furnitureStage.add(productionRing);
+
+  const drinkProductionPile = new THREE.Group();
+  drinkProductionPile.position.set(-4.65, 0.08, -1.05);
+  furnitureStage.add(drinkProductionPile);
+
+  // Tezgâhın arkasındaki uzun şerit oyuncunun taşıdığı içecekleri bıraktığı
+  // alandır. Müşteriler yalnızca tezgâhın üzerindeki bu stoktan servis alır.
+  const drinkDropPosition = position.clone().add(new THREE.Vector3(-4.0, 0, -3.55));
+  const dropZone = new THREE.Group();
+  dropZone.position.set(-4.0, 0.035, -3.55);
+  const dropFill = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.25, 4.45),
+    new THREE.MeshBasicMaterial({ color: 0x75c873, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
+  );
+  dropFill.rotation.x = -Math.PI / 2;
+  dropZone.add(dropFill);
+  const dropBorderMaterial = new THREE.MeshBasicMaterial({ color: 0xf4fff0, transparent: true, opacity: 0.78 });
+  addBox(dropZone, new THREE.Vector3(1.35, 0.06, 0.08), new THREE.Vector3(0, 0.04, 2.25), dropBorderMaterial);
+  addBox(dropZone, new THREE.Vector3(1.35, 0.06, 0.08), new THREE.Vector3(0, 0.04, -2.25), dropBorderMaterial);
+  addBox(dropZone, new THREE.Vector3(0.08, 0.06, 4.58), new THREE.Vector3(0.675, 0.04, 0), dropBorderMaterial);
+  addBox(dropZone, new THREE.Vector3(0.08, 0.06, 4.58), new THREE.Vector3(-0.675, 0.04, 0), dropBorderMaterial);
+  furnitureStage.add(dropZone);
+
+  const counterDrinkPile = new THREE.Group();
+  counterDrinkPile.position.set(-2.8, 1.39, -3.35);
+  furnitureStage.add(counterDrinkPile);
+
+  // Müşterilerin ödemeleri tezgâhın yanında ayrı bir istifte birikir.
+  const paymentPosition = position.clone().add(new THREE.Vector3(-2.8, 0, -0.25));
+  const paymentArea = new THREE.Group();
+  paymentArea.position.set(-2.8, 0.035, -0.25);
+  const paymentFill = new THREE.Mesh(
+    new THREE.CircleGeometry(0.78, 30),
+    new THREE.MeshBasicMaterial({ color: 0x31c96a, transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
+  );
+  const paymentEdge = new THREE.Mesh(
+    new THREE.RingGeometry(0.7, 0.8, 30),
+    new THREE.MeshBasicMaterial({ color: 0xe9fff0, transparent: true, opacity: 0.82, side: THREE.DoubleSide }),
+  );
+  paymentFill.rotation.x = -Math.PI / 2;
+  paymentEdge.rotation.x = -Math.PI / 2;
+  paymentEdge.position.y = 0.01;
+  paymentArea.add(paymentFill, paymentEdge);
+  furnitureStage.add(paymentArea);
+
+  const paymentPile = new THREE.Group();
+  paymentPile.position.set(-2.8, 0.08, -0.25);
+  furnitureStage.add(paymentPile);
 
   const stages = [floorStage, wallStage, entranceStage, furnitureStage];
   for (const stage of stages) {
@@ -984,6 +1098,12 @@ const createTavern = (position: THREE.Vector3) => {
     deliveryClock: 0,
     delivering: false,
     barrelPosition,
+    drinkPickupPosition,
+    drinkDropPosition,
+    paymentPosition,
+    drinkProductionPile,
+    counterDrinkPile,
+    paymentPile,
     entrancePosition: toWorld(8.15, 0),
     exitPosition: toWorld(10.2, -7.8),
     queueOrigin: toWorld(-1.7, -3.35),
@@ -1337,24 +1457,46 @@ const finishTavern = () => {
   if (firstTableZone) activateBuildZone(firstTableZone);
   customerSpawnClock = 3.2;
   audio.coin();
-  showToast('Taverna açıldı! Gelen müşterilere içecek otomatik servis edilir.');
+  showToast('Taverna açıldı! Fıçı her saniye 1 içecek üretiyor.');
 };
 
-const makeDrinkMug = () => {
-  const mug = new THREE.Group();
-  const cup = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.105, 0.09, 0.25, 9),
-    new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
-  );
-  cup.position.y = 0.12;
-  const drink = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.088, 0.088, 0.018, 9),
-    new THREE.MeshStandardMaterial({ color: 0xc87826, roughness: 0.55 }),
-  );
-  drink.position.y = 0.25;
-  mug.add(cup, drink);
-  mug.visible = false;
-  return mug;
+const makeOrderBubble = (amount: number) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context is unavailable.');
+  context.fillStyle = 'rgba(255,255,255,.96)';
+  context.strokeStyle = '#6c512f';
+  context.lineWidth = 8;
+  context.beginPath();
+  context.roundRect(8, 8, 240, 102, 34);
+  context.fill();
+  context.stroke();
+  context.fillStyle = '#e8d2a4';
+  context.strokeStyle = '#8a6138';
+  context.lineWidth = 7;
+  context.beginPath();
+  context.roundRect(42, 35, 52, 49, 9);
+  context.fill();
+  context.stroke();
+  context.beginPath();
+  context.arc(98, 58, 18, -Math.PI / 2, Math.PI / 2);
+  context.stroke();
+  context.fillStyle = '#c87826';
+  context.fillRect(48, 37, 40, 9);
+  context.fillStyle = '#4c3625';
+  context.font = '900 54px system-ui';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(`×${amount}`, 170, 60);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  bubble.position.set(0, 2.38, 0);
+  bubble.scale.set(1.65, 0.83, 1);
+  bubble.renderOrder = 300;
+  return bubble;
 };
 
 const queueTarget = (index: number) => tavern.queueOrigin.clone().add(new THREE.Vector3(index * 0.92, 0, 0));
@@ -1383,9 +1525,11 @@ const moveCustomerTowards = (customer: CustomerData, target: THREE.Vector3, delt
 const spawnCustomer = () => {
   const group = new THREE.Group();
   const visual = createCustomerVisual(customers.length + Math.floor(ambientTime));
-  const mug = makeDrinkMug();
+  const requestedDrinks = 1 + Math.floor(seededRandom() * 3);
+  const requestBubble = makeOrderBubble(requestedDrinks);
+  const mug = makeDrinkMug(false);
   mug.position.set(0.38, 0.9, -0.28);
-  group.add(visual, mug);
+  group.add(visual, mug, requestBubble);
   const spawnPosition = tavern.exitPosition.clone().add(new THREE.Vector3(1.8, 0, -2.2));
   group.position.copy(spawnPosition);
   world.add(group);
@@ -1402,6 +1546,8 @@ const spawnCustomer = () => {
     drinkClock: 0,
     walkClock: 0,
     mug,
+    requestedDrinks,
+    requestBubble,
   };
   customers.push(customer);
 };
@@ -1412,22 +1558,214 @@ const refreshQueue = () => {
   });
 };
 
-const animateCustomerPayment = (position: THREE.Vector3) => {
-  const material = new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.72 });
-  const banknote = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.045, 0.21), material);
-  const start = position.clone().add(new THREE.Vector3(0, 1.05, 0));
-  const target = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+const rebuildTavernResourcePiles = () => {
+  if (!tavern) return;
+
+  tavern.drinkProductionPile.clear();
+  for (let index = 0; index < state.barrelDrinks; index += 1) {
+    const mug = makeDrinkMug();
+    const column = index % 5;
+    const layer = Math.floor(index / 5);
+    mug.position.set((column - 2) * 0.25, 0.13 + layer * 0.27, 0);
+    tavern.drinkProductionPile.add(mug);
+  }
+
+  // Tezgâh stoğunda sınır yoktur; içecekler tezgâh boyunca sekizli
+  // sıralar hâlinde yukarı doğru düzenli biçimde dizilir.
+  tavern.counterDrinkPile.clear();
+  for (let index = 0; index < state.counterDrinks; index += 1) {
+    const mug = makeDrinkMug();
+    const column = index % 8;
+    const layer = Math.floor(index / 8);
+    mug.position.set(0, layer * 0.27, -1.96 + column * 0.56);
+    tavern.counterDrinkPile.add(mug);
+  }
+
+  tavern.paymentPile.clear();
+  const noteCount = Math.floor(state.pendingGold / 4);
+  for (let index = 0; index < noteCount; index += 1) {
+    const note = makeBanknoteMesh();
+    const column = index % 4;
+    const layer = Math.floor(index / 4);
+    note.position.set((column - 1.5) * 0.16, layer * 0.052, ((index + layer) % 2) * 0.06 - 0.03);
+    note.rotation.y = (column - 1.5) * 0.07;
+    tavern.paymentPile.add(note);
+  }
+};
+
+const counterDrinkWorldTarget = (index: number) => {
+  const column = index % 8;
+  const layer = Math.floor(index / 8);
+  tavern.counterDrinkPile.updateWorldMatrix(true, false);
+  return tavern.counterDrinkPile.localToWorld(new THREE.Vector3(0, layer * 0.27 + 0.13, -1.96 + column * 0.56));
+};
+
+const dropCustomerPayment = (position: THREE.Vector3, value: number) => {
+  const noteCount = Math.max(1, Math.floor(value / 4));
+  for (let index = 0; index < noteCount; index += 1) {
+    const banknote = makeBanknoteMesh();
+    const start = position.clone().add(new THREE.Vector3(0, 1.05 + index * 0.04, 0));
+    const target = tavern.paymentPosition.clone().add(new THREE.Vector3((index - (noteCount - 1) / 2) * 0.13, 0.12, 0));
+    banknote.position.copy(start);
+    scene.add(banknote);
+    addTween(0.42 + index * 0.045, (progress) => {
+      banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
+      banknote.position.y += Math.sin(progress * Math.PI) * 0.8;
+      banknote.rotation.y += 0.28;
+    }, () => {
+      scene.remove(banknote);
+      state.pendingGold += 4;
+      rebuildTavernResourcePiles();
+      bounceGroup(tavern.paymentPile);
+    });
+  }
+};
+
+let drinkProductionClock = 0;
+let drinkPickupClock = 0;
+let drinkDropClock = 0;
+let drinkCollecting = false;
+let drinkDelivering = false;
+let paymentCollecting = false;
+
+const collectProducedDrink = () => {
+  if (
+    drinkCollecting
+    || state.barrelDrinks <= 0
+    || state.carried > 0
+    || state.pendingCollection > 0
+    || state.carriedDrinks + state.pendingDrinkCollection >= state.capacity
+  ) return;
+
+  const sourceMug = tavern.drinkProductionPile.children[tavern.drinkProductionPile.children.length - 1];
+  if (!sourceMug) return;
+  const start = new THREE.Vector3();
+  sourceMug.getWorldPosition(start);
+  state.barrelDrinks -= 1;
+  state.pendingDrinkCollection += 1;
+  drinkCollecting = true;
+  rebuildTavernResourcePiles();
+
+  const flyingMug = makeDrinkMug();
+  flyingMug.position.copy(start);
+  scene.add(flyingMug);
+  const stackIndex = state.carriedDrinks + state.pendingDrinkCollection - 1;
+  addTween(0.36, (progress) => {
+    const target = new THREE.Vector3(0, 0.47 + stackIndex * 0.235, 0.75);
+    player.localToWorld(target);
+    flyingMug.position.lerpVectors(start, target, easeOutCubic(progress));
+    flyingMug.position.y += Math.sin(progress * Math.PI) * 0.72;
+    flyingMug.rotation.y = progress * 0.34;
+  }, () => {
+    scene.remove(flyingMug);
+    state.pendingDrinkCollection -= 1;
+    state.carriedDrinks += 1;
+    drinkCollecting = false;
+    audio.pickup();
+    rebuildPlayerStack();
+    updateUI();
+    bounceGroup(stackGroup);
+  });
+};
+
+const deliverDrinkToCounter = () => {
+  if (drinkDelivering || state.carriedDrinks <= 0 || stackMeshes.length === 0) return;
+  const topMug = stackMeshes[stackMeshes.length - 1];
+  const start = new THREE.Vector3();
+  topMug.getWorldPosition(start);
+  state.carriedDrinks -= 1;
+  drinkDelivering = true;
+  rebuildPlayerStack();
+  updateUI();
+
+  const flyingMug = makeDrinkMug();
+  flyingMug.position.copy(start);
+  scene.add(flyingMug);
+  const target = counterDrinkWorldTarget(state.counterDrinks);
+  addTween(0.32, (progress) => {
+    flyingMug.position.lerpVectors(start, target, easeInOutCubic(progress));
+    flyingMug.position.y += Math.sin(progress * Math.PI) * 0.72;
+    flyingMug.rotation.y += 0.22;
+  }, () => {
+    scene.remove(flyingMug);
+    state.counterDrinks += 1;
+    drinkDelivering = false;
+    audio.unload();
+    rebuildTavernResourcePiles();
+    bounceGroup(tavern.counterDrinkPile);
+  });
+};
+
+const collectPayment = () => {
+  if (paymentCollecting || state.pendingGold < 4) return;
+  const sourceNote = tavern.paymentPile.children[tavern.paymentPile.children.length - 1];
+  const start = tavern.paymentPosition.clone().add(new THREE.Vector3(0, 0.12, 0));
+  sourceNote?.getWorldPosition(start);
+  state.pendingGold -= 4;
+  paymentCollecting = true;
+  rebuildTavernResourcePiles();
+
+  const banknote = makeBanknoteMesh();
   banknote.position.copy(start);
   scene.add(banknote);
-  addTween(0.48, (progress) => {
+  const target = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+  addTween(0.3, (progress) => {
     banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
-    banknote.position.y += Math.sin(progress * Math.PI) * 0.85;
-    banknote.rotation.y += 0.3;
+    banknote.position.y += Math.sin(progress * Math.PI) * 0.62;
+    banknote.rotation.y += 0.28;
   }, () => {
     scene.remove(banknote);
-    banknote.geometry.dispose();
-    material.dispose();
+    state.gold += 4;
+    paymentCollecting = false;
+    audio.coin();
+    updateUI();
   });
+};
+
+const updateTavernOperations = (delta: number) => {
+  if (state.barrelDrinks < 10) {
+    drinkProductionClock += delta;
+    if (drinkProductionClock >= 1) {
+      drinkProductionClock -= 1;
+      state.barrelDrinks += 1;
+      rebuildTavernResourcePiles();
+      bounceGroup(tavern.drinkProductionPile);
+    }
+  } else {
+    drinkProductionClock = 0;
+  }
+
+  const nearProduction = tavern.drinkPickupPosition.distanceTo(player.position) < 1.35;
+  if (
+    nearProduction
+    && state.carried === 0
+    && state.pendingCollection === 0
+    && state.carriedDrinks + state.pendingDrinkCollection < state.capacity
+    && state.barrelDrinks > 0
+  ) {
+    drinkPickupClock += delta;
+    if (drinkPickupClock >= 0.14 && !drinkCollecting) {
+      drinkPickupClock = 0;
+      collectProducedDrink();
+    }
+  } else {
+    drinkPickupClock = 0;
+  }
+
+  const nearCounterDrop = tavern.drinkDropPosition.distanceTo(player.position) < 1.42;
+  if (nearCounterDrop && state.carriedDrinks > 0) {
+    drinkDropClock += delta;
+    if (drinkDropClock >= 0.14 && !drinkDelivering) {
+      drinkDropClock = 0;
+      deliverDrinkToCounter();
+    }
+  } else {
+    drinkDropClock = 0;
+  }
+
+  if (tavern.paymentPosition.distanceTo(player.position) < 1.28 && state.pendingGold >= 4) {
+    collectPayment();
+  }
 };
 
 const spawnTableTip = (table: TavernTable) => {
@@ -1470,13 +1808,15 @@ const serveFrontCustomer = () => {
   const customerAtCounter = customer
     ? customer.group.position.distanceToSquared(queueTarget(0)) < 0.42 * 0.42
     : false;
-  if (!customer || !customerAtCounter) return;
+  if (!customer || !customerAtCounter || state.counterDrinks < customer.requestedDrinks) return;
   customerQueue.shift();
   refreshQueue();
+  state.counterDrinks -= customer.requestedDrinks;
+  rebuildTavernResourcePiles();
   customer.mug.visible = true;
-  state.gold += 4;
-  animateCustomerPayment(customer.group.position);
-  audio.coin();
+  customer.requestBubble.visible = false;
+  dropCustomerPayment(customer.group.position, customer.requestedDrinks * 4);
+  audio.unload();
 
   const table = tavern.tables.find((candidate) => !candidate.occupied) ?? null;
   if (table) {
@@ -1599,7 +1939,10 @@ const deliverLogToTavern = () => {
 };
 
 const updateTavern = (delta: number) => {
-  if (tavern.completed) return;
+  if (tavern.completed) {
+    updateTavernOperations(delta);
+    return;
+  }
   if (tavern.deliveryPosition.distanceTo(player.position) < 1.85 && state.carried > 0 && !tavern.delivering) {
     tavern.deliveryClock += delta;
     if (tavern.deliveryClock >= 0.18) {
@@ -1646,7 +1989,12 @@ const buyUpgrade = (kind: UpgradeKind) => {
 
 const updateUI = () => {
   goldCount.textContent = `${state.gold}`;
-  woodCount.textContent = `${state.carried}/${state.capacity}`;
+  const carryingDrinks = state.carriedDrinks > 0 || state.pendingDrinkCollection > 0;
+  woodCount.textContent = carryingDrinks
+    ? `${state.carriedDrinks + state.pendingDrinkCollection}/${state.capacity}`
+    : `${state.carried}/${state.capacity}`;
+  const carryIcon = document.querySelector<HTMLElement>('.log-icon');
+  if (carryIcon) carryIcon.textContent = carryingDrinks ? '●' : '▰';
   offerWood.textContent = `${offer.wood}`;
   offerGold.textContent = `${offer.gold}`;
   const time = Math.max(0, Math.ceil(offer.remaining));
@@ -1823,6 +2171,7 @@ let playerRotation = 0;
 let walkTime = 0;
 
 const nearestTreeInRange = () => {
+  if (state.carriedDrinks > 0 || state.pendingDrinkCollection > 0) return null;
   let result: TreeData | null = null;
   let bestDistance = 2.1;
   for (const tree of trees) {
@@ -1927,6 +2276,7 @@ const updatePlayer = (delta: number) => {
 
 let collectionCooldown = 0;
 const updateCollection = (delta: number) => {
+  if (state.carriedDrinks > 0 || state.pendingDrinkCollection > 0) return;
   collectionCooldown = Math.max(0, collectionCooldown - delta);
   if (collectionCooldown > 0 || groundLogs.some((log) => log.collecting)) return;
   const nextLog = groundLogs
@@ -2006,6 +2356,9 @@ const updateContextHint = () => {
   const nearTavernDelivery = !tavern.completed && tavern.deliveryPosition.distanceTo(player.position) < 2.2;
   const nearbyBuildZone = buildZones.find((zone) => zone.active && !zone.built && zone.position.distanceTo(player.position) < 1.9);
   const nearbyGroundLog = groundLogs.some((log) => !log.collecting && log.mesh.position.distanceTo(player.position) < 1.6);
+  const nearDrinkProduction = tavern.completed && tavern.drinkPickupPosition.distanceTo(player.position) < 1.7;
+  const nearDrinkDrop = tavern.completed && tavern.drinkDropPosition.distanceTo(player.position) < 1.8;
+  const nearPayment = tavern.completed && tavern.paymentPosition.distanceTo(player.position) < 1.55;
   if (nearTavernDelivery) {
     message = state.carried > 0
       ? `Taverna kuruluyor · ${tavern.paid}/${tavern.cost.amount} odun`
@@ -2016,8 +2369,16 @@ const updateContextHint = () => {
     message = hasResource
       ? `İnşa ediliyor · ${nearbyBuildZone.paid}/${nearbyBuildZone.cost.amount} ${resourceName}`
       : `${nearbyBuildZone.cost.amount - nearbyBuildZone.paid} ${resourceName} gerekli`;
-  } else if (tavern.completed && tavern.barrelPosition.distanceTo(player.position) < 1.8) {
-    message = 'Fıçı müşterilere otomatik servis sağlıyor';
+  } else if (nearDrinkProduction) {
+    if (state.carried > 0) message = 'Önce taşıdığın odunları bırak';
+    else if (state.carriedDrinks + state.pendingDrinkCollection >= state.capacity) message = 'İçecek taşıma kapasitesi dolu';
+    else message = `Fıçı stoğu: ${state.barrelDrinks}/10 · Alanda durarak içecek al`;
+  } else if (nearDrinkDrop) {
+    message = state.carriedDrinks > 0
+      ? `İçecekler tezgâha bırakılıyor · stok ${state.counterDrinks}`
+      : `Müşteri tezgâhı stoğu: ${state.counterDrinks}`;
+  } else if (nearPayment) {
+    message = state.pendingGold > 0 ? `Bekleyen ödeme: ${state.pendingGold} para` : 'Ödeme alanı boş';
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
     message = 'Taşıma kapasitesi dolu';
   }
