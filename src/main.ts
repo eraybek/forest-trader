@@ -6,6 +6,7 @@ type UpgradeKind = 'capacity' | 'damage' | 'speed';
 interface TreeData {
   group: THREE.Group;
   healthBar: THREE.Group;
+  rangeIndicator: THREE.Group;
   home: THREE.Vector3;
   hp: number;
   alive: boolean;
@@ -309,6 +310,22 @@ const leafMaterials = [
   new THREE.MeshStandardMaterial({ color: 0x3f9142, roughness: 1 }),
   new THREE.MeshStandardMaterial({ color: 0x58a847, roughness: 1 }),
 ];
+const treeRangeFillGeometry = new THREE.CircleGeometry(2.02, 40);
+const treeRangeOutlineGeometry = new THREE.RingGeometry(1.93, 2.02, 40);
+const treeRangeFillMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.055,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const treeRangeOutlineMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.48,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
 
 const trees: TreeData[] = [];
 const treeOccluderMeshes: THREE.Mesh[] = [];
@@ -461,6 +478,17 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
   const group = new THREE.Group();
   group.position.copy(position);
 
+  const rangeIndicator = new THREE.Group();
+  rangeIndicator.position.copy(position);
+  rangeIndicator.position.y = 0.028;
+  const rangeFill = new THREE.Mesh(treeRangeFillGeometry, treeRangeFillMaterial);
+  const rangeOutline = new THREE.Mesh(treeRangeOutlineGeometry, treeRangeOutlineMaterial);
+  rangeFill.rotation.x = -Math.PI / 2;
+  rangeOutline.rotation.x = -Math.PI / 2;
+  rangeOutline.position.y = 0.004;
+  rangeIndicator.add(rangeFill, rangeOutline);
+  world.add(rangeIndicator);
+
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 2.35, 7), trunkMaterial.clone());
   trunk.position.y = 1.15;
   trunk.castShadow = true;
@@ -491,7 +519,7 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
   group.add(healthBar);
 
   world.add(group);
-  const tree: TreeData = { group, healthBar, home: position.clone(), hp: 3, alive: true };
+  const tree: TreeData = { group, healthBar, rangeIndicator, home: position.clone(), hp: 3, alive: true };
   group.traverse((child) => {
     if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill) return;
     child.userData.tree = tree;
@@ -808,6 +836,7 @@ const spawnFallenLogs = (treePosition: THREE.Vector3) => {
 
 const fellTree = (tree: TreeData) => {
   tree.alive = false;
+  tree.rangeIndicator.visible = false;
   audio.treeFall();
   tree.healthBar.visible = false;
   const treePosition = tree.group.position.clone();
@@ -822,6 +851,7 @@ const fellTree = (tree: TreeData) => {
     window.setTimeout(() => {
       tree.hp = 3;
       tree.alive = true;
+      tree.rangeIndicator.visible = true;
       tree.group.position.copy(tree.home);
       tree.group.rotation.set(0, 0, 0);
       tree.group.scale.setScalar(0.04);
