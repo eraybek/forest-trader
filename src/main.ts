@@ -29,7 +29,7 @@ interface BuildZoneData {
   group: THREE.Group;
   position: THREE.Vector3;
   spawnPosition: THREE.Vector3;
-  label: THREE.Sprite;
+  label: THREE.Mesh;
   progressFill: THREE.Mesh;
   progressWidth: number;
   cost: number;
@@ -535,60 +535,62 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
 
 const makePurchaseLabel = (paid: number, cost: number) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 384;
-  canvas.height = 176;
+  canvas.width = 256;
+  canvas.height = 256;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context is unavailable.');
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
-  sprite.scale.set(1.75, 0.8, 1);
-  sprite.renderOrder = 220;
-  sprite.userData.canvas = canvas;
-  sprite.userData.context = context;
-  updatePurchaseLabel(sprite, paid, cost);
-  return sprite;
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.28, 1.28),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  label.rotation.x = -Math.PI / 2;
+  label.renderOrder = 220;
+  label.userData.canvas = canvas;
+  label.userData.context = context;
+  updatePurchaseLabel(label, paid, cost);
+  return label;
 };
 
-const updatePurchaseLabel = (sprite: THREE.Sprite, paid: number, cost: number) => {
-  const canvas = sprite.userData.canvas as HTMLCanvasElement;
-  const context = sprite.userData.context as CanvasRenderingContext2D;
+const updatePurchaseLabel = (label: THREE.Mesh, paid: number, cost: number) => {
+  const canvas = label.userData.canvas as HTMLCanvasElement;
+  const context = label.userData.context as CanvasRenderingContext2D;
   context.clearRect(0, 0, canvas.width, canvas.height);
   const remaining = Math.max(0, cost - paid);
-  context.shadowColor = 'rgba(72, 51, 26, .2)';
-  context.shadowBlur = 12;
-  context.shadowOffsetY = 8;
-  context.fillStyle = 'rgba(255, 252, 229, .98)';
-  context.roundRect(16, 14, 352, 142, 38);
-  context.fill();
-  context.shadowColor = 'transparent';
-  context.lineWidth = 9;
-  context.strokeStyle = '#ffffff';
-  context.stroke();
-  context.lineWidth = 4;
-  context.strokeStyle = '#d6bd75';
-  context.stroke();
   context.textAlign = 'center';
   context.textBaseline = 'middle';
 
-  // Pizza Ready benzeri kompakt fiyat etiketi: kalan tutar + para türü.
-  context.fillStyle = '#527b36';
-  context.font = '1000 78px system-ui';
-  context.fillText(String(remaining), 156, 85);
+  // Pizza Ready tarzı dünya işareti: sayı üstte, yeşil banknot altta.
+  context.shadowColor = 'rgba(74, 55, 24, .28)';
+  context.shadowBlur = 8;
+  context.shadowOffsetY = 5;
+  context.fillStyle = '#ffffff';
+  context.font = '1000 96px system-ui';
+  context.fillText(String(remaining), 128, 78);
+  context.shadowColor = 'transparent';
 
-  const coinX = 264;
-  const coinY = 85;
-  context.fillStyle = '#e9a92c';
+  context.fillStyle = '#20bf55';
+  context.strokeStyle = '#087b36';
+  context.lineWidth = 9;
   context.beginPath();
-  context.arc(coinX, coinY, 42, 0, Math.PI * 2);
+  context.roundRect(76, 138, 104, 66, 10);
   context.fill();
-  context.lineWidth = 7;
-  context.strokeStyle = '#fff0a5';
   context.stroke();
-  context.fillStyle = '#fff7c8';
-  context.font = '1000 49px system-ui';
-  context.fillText('G', coinX, coinY + 1);
-  const material = sprite.material as THREE.SpriteMaterial;
+  context.fillStyle = '#65e883';
+  context.beginPath();
+  context.arc(128, 171, 19, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = '#0b8f3e';
+  context.lineWidth = 6;
+  context.beginPath();
+  context.moveTo(86, 153);
+  context.lineTo(86, 189);
+  context.moveTo(170, 153);
+  context.lineTo(170, 189);
+  context.stroke();
+
+  const material = label.material as THREE.MeshBasicMaterial;
   if (material.map) material.map.needsUpdate = true;
 };
 
@@ -719,8 +721,8 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(-edge / 2, 0.075, 0), borderMaterial);
 
   const label = makePurchaseLabel(0, cost);
-  // Zemine yakın fiyat etiketi; eski havada asılı tabela görünümünü engeller.
-  label.position.set(0, 0.52, 0.7);
+  // Etiket bir UI sprite'ı değil; satın alma karesine basılmış yatay dünya işaretidir.
+  label.position.set(0, 0.062, 0);
   group.add(label);
   world.add(group);
   buildZones.push({
@@ -961,7 +963,7 @@ const buyUpgrade = (kind: UpgradeKind) => {
   const costs = upgradeCosts();
   const cost = costs[kind];
   if (state.gold < cost) {
-    showToast('Yeterli gold yok');
+    showToast('Yeterli paran yok');
     return;
   }
   state.gold -= cost;
@@ -990,9 +992,9 @@ const updateUI = () => {
   getElement<HTMLElement>('capacity-value').textContent = `${state.capacity} → ${state.capacity + 2}`;
   getElement<HTMLElement>('damage-value').textContent = `${state.damage} → ${state.damage + 1}`;
   getElement<HTMLElement>('speed-value').textContent = `${Math.round((state.speed / 4.8) * 100)}% → ${Math.round((state.speed * 1.12 / 4.8) * 100)}%`;
-  getElement<HTMLElement>('capacity-cost').textContent = `${costs.capacity} ●`;
-  getElement<HTMLElement>('damage-cost').textContent = `${costs.damage} ●`;
-  getElement<HTMLElement>('speed-cost').textContent = `${costs.speed} ●`;
+  getElement<HTMLElement>('capacity-cost').textContent = `${costs.capacity}`;
+  getElement<HTMLElement>('damage-cost').textContent = `${costs.damage}`;
+  getElement<HTMLElement>('speed-cost').textContent = `${costs.speed}`;
   document.querySelectorAll<HTMLButtonElement>('.upgrade-card').forEach((button) => {
     const kind = button.dataset.upgrade as UpgradeKind;
     button.disabled = state.gold < costs[kind];
@@ -1085,7 +1087,7 @@ sellButton.addEventListener('click', () => {
   rebuildStationPiles();
   updateUI();
   closePanels();
-  showToast(`Teklif tamamlandı: +${offer.gold} gold`);
+  showToast(`Teklif tamamlandı: +${offer.gold} para`);
 });
 
 const generateOffer = () => {
@@ -1313,8 +1315,8 @@ const updateContextHint = () => {
     message = nearbyZone.paid >= nearbyZone.cost
       ? 'İstasyon kuruluyor…'
       : state.gold > 0
-        ? `İnşa için bekle · ${nearbyZone.paid}/${nearbyZone.cost} gold`
-        : `İstasyon maliyeti ${nearbyZone.cost} gold`;
+        ? `İnşa için bekle · ${nearbyZone.paid}/${nearbyZone.cost} para`
+        : `İstasyon maliyeti ${nearbyZone.cost} para`;
   } else if (nearbyStation && state.carried > 0) {
     message = 'Odunlar istasyona bırakılıyor…';
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
