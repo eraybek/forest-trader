@@ -104,15 +104,25 @@ button { font: inherit; }
   position: fixed;
   z-index: 4;
   left: 50%;
-  bottom: max(26px, env(safe-area-inset-bottom));
+  top: 75%;
   width: 116px;
   height: 116px;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%) scale(.78);
   border: 2px solid rgba(255,255,255,.28);
   border-radius: 50%;
   background: rgba(42,54,35,.22);
   box-shadow: inset 0 0 0 10px rgba(255,255,255,.04);
   touch-action: none;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .1s ease, transform .1s ease, visibility .1s;
+}
+
+.joystick.active {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  visibility: visible;
 }
 
 .joystick-knob {
@@ -231,7 +241,6 @@ button { font: inherit; }
 .hidden { display: none !important; }
 
 @media (min-width: 700px) {
-  .joystick { bottom: 32px; }
   .side-actions { left: max(18px, calc(50% - 320px)); }
   .top-hud { left: max(18px, calc(50% - 320px)); }
 }
