@@ -10,12 +10,48 @@
   <body>
     <div id="game"></div>
 
-    <div class="top-hud" aria-label="Kaynaklar">
+    <main id="main-menu" class="main-menu" aria-label="Ana menü">
+      <div class="menu-vignette"></div>
+      <div class="menu-content">
+        <div class="game-logo" aria-label="Forest Trader">
+          <span class="logo-forest">FOREST</span>
+          <span class="logo-trader">TRADER</span>
+          <span class="logo-axe" aria-hidden="true">◆</span>
+        </div>
+        <p class="menu-tagline">Kes · Topla · Büyüt</p>
+        <button id="play-button" class="play-button"><span>▶</span><b>OYNA</b></button>
+      </div>
+      <div class="menu-footer">MOONBORNE GAMES</div>
+    </main>
+
+    <button id="settings-button" class="settings-button" aria-label="Ayarlar">⚙</button>
+
+    <div id="settings-backdrop" class="settings-backdrop hidden"></div>
+    <section id="settings-panel" class="settings-panel hidden" aria-label="Ses ayarları">
+      <header>
+        <div><span class="eyebrow">AYARLAR</span><h2>Ses</h2></div>
+        <button id="settings-close" class="close-panel" aria-label="Kapat">×</button>
+      </header>
+      <label class="volume-row" for="music-volume">
+        <span class="volume-icon">♫</span>
+        <span><strong>Müzik</strong><small>Orman melodisi</small></span>
+        <input id="music-volume" type="range" min="0" max="100" value="55" />
+        <output id="music-volume-value">55</output>
+      </label>
+      <label class="volume-row" for="sfx-volume">
+        <span class="volume-icon">♬</span>
+        <span><strong>Efektler</strong><small>Kesme, toplama ve bırakma</small></span>
+        <input id="sfx-volume" type="range" min="0" max="100" value="80" />
+        <output id="sfx-volume-value">80</output>
+      </label>
+    </section>
+
+    <div class="top-hud game-ui" aria-label="Kaynaklar">
       <div class="resource-pill"><span class="coin-icon">●</span><strong id="gold-count">0</strong></div>
       <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
     </div>
 
-    <div class="side-actions">
+    <div class="side-actions game-ui">
       <button id="offers-button" class="square-button" aria-label="Teklifler">
         <span>↔</span><small>Teklif</small><b id="offer-badge" class="badge">1</b>
       </button>
@@ -24,7 +60,7 @@
       </button>
     </div>
 
-    <div id="action-hint" class="action-hint hidden"></div>
+    <div id="action-hint" class="action-hint game-ui hidden"></div>
 
     <div id="joystick" class="joystick" aria-label="Hareket kontrolü">
       <div id="joystick-knob" class="joystick-knob"></div>
