@@ -56,6 +56,45 @@ interface TavernData {
   completed: boolean;
   deliveryClock: number;
   delivering: boolean;
+  barrelPosition: THREE.Vector3;
+  entrancePosition: THREE.Vector3;
+  exitPosition: THREE.Vector3;
+  queueOrigin: THREE.Vector3;
+  tables: TavernTable[];
+  colliders: TavernCollider[];
+}
+
+interface TavernTable {
+  group: THREE.Group;
+  seatPosition: THREE.Vector3;
+  occupied: boolean;
+}
+
+interface TavernCollider {
+  center: THREE.Vector3;
+  halfX: number;
+  halfZ: number;
+  stage: number;
+}
+
+type CustomerState = 'arriving' | 'queue' | 'toSeat' | 'seated' | 'standingDrink' | 'leaving';
+
+interface CustomerData {
+  group: THREE.Group;
+  visual: THREE.Group;
+  state: CustomerState;
+  path: THREE.Vector3[];
+  queueIndex: number;
+  table: TavernTable | null;
+  drinkClock: number;
+  walkClock: number;
+  mug: THREE.Group;
+}
+
+interface TipData {
+  group: THREE.Group;
+  value: number;
+  collecting: boolean;
 }
 
 interface TweenData {
@@ -325,7 +364,7 @@ world.add(mainPath);
 // Ana yoldan tavernanın girişine uzanan müşteri yolu.
 const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 3.2), pathMaterial);
 tavernPath.rotation.x = -Math.PI / 2;
-tavernPath.position.set(4.35, 0.018, 2.9);
+tavernPath.position.set(2.35, 0.018, -2.2);
 tavernPath.receiveShadow = true;
 world.add(tavernPath);
 
@@ -361,6 +400,9 @@ const groundLogs: GroundLog[] = [];
 const stations: StationData[] = [];
 const buildZones: BuildZoneData[] = [];
 const tweens: TweenData[] = [];
+const customers: CustomerData[] = [];
+const customerQueue: CustomerData[] = [];
+const tips: TipData[] = [];
 const keys = new Set<string>();
 
 const state = {
@@ -376,6 +418,9 @@ const state = {
 };
 
 let tavern: TavernData;
+let customerSpawnClock = 0;
+let drinkFillClock = 0;
+let playerHasDrink = false;
 
 const offer: OfferData = {
   wood: 8,
@@ -472,6 +517,54 @@ const toolHand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMater
 toolHand.position.set(-0.56, 0.91, -0.12);
 toolHand.castShadow = true;
 playerVisual.add(toolHand);
+
+const carriedMug = new THREE.Group();
+const carriedMugBody = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.105, 0.09, 0.25, 9),
+  new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
+);
+carriedMugBody.position.y = 0.12;
+const carriedDrink = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.088, 0.088, 0.018, 9),
+  new THREE.MeshStandardMaterial({ color: 0xc87826, roughness: 0.55 }),
+);
+carriedDrink.position.y = 0.25;
+carriedMug.add(carriedMugBody, carriedDrink);
+carriedMug.position.set(0.48, 1.03, -0.32);
+carriedMug.visible = false;
+player.add(carriedMug);
+
+const createCustomerVisual = (variant: number) => {
+  const visual = new THREE.Group();
+  const shirts = [0x6d8fc7, 0xb8674d, 0x6c9c63, 0x9b6ca8, 0xc99845, 0x4f8d8a];
+  const trousers = [0x34485b, 0x4d4138, 0x384b3d, 0x463c57];
+  const skins = [0xd79b67, 0xbd7d50, 0xe0aa78, 0x9d643f];
+  const hairs = [0x493022, 0x2f241e, 0x7b4c26, 0x191817];
+  const customerShirt = new THREE.MeshStandardMaterial({ color: shirts[variant % shirts.length], roughness: 0.85 });
+  const customerPants = new THREE.MeshStandardMaterial({ color: trousers[variant % trousers.length], roughness: 0.9 });
+  const customerSkin = new THREE.MeshStandardMaterial({ color: skins[variant % skins.length], roughness: 0.85 });
+  const customerHair = new THREE.MeshStandardMaterial({ color: hairs[variant % hairs.length], roughness: 1 });
+  const customerBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.52, 5, 9), customerShirt);
+  customerBody.position.y = 0.92;
+  customerBody.castShadow = true;
+  visual.add(customerBody);
+  for (const x of [-0.17, 0.17]) {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.32, 4, 7), customerPants);
+    leg.position.set(x, 0.37, 0);
+    leg.castShadow = true;
+    leg.userData.walkLeg = x < 0 ? -1 : 1;
+    visual.add(leg);
+  }
+  const customerHead = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 9), customerSkin);
+  customerHead.position.y = 1.58;
+  customerHead.castShadow = true;
+  visual.add(customerHead);
+  const customerHairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.54), customerHair);
+  customerHairMesh.position.y = 1.67;
+  customerHairMesh.castShadow = true;
+  visual.add(customerHairMesh);
+  return visual;
+};
 
 const stackGroup = new THREE.Group();
 stackGroup.position.set(0, 0, 0.68);
@@ -749,8 +842,8 @@ const createTavern = (position: THREE.Vector3) => {
 
   // İnşaat başlamadan önce tavernanın kaplayacağı alanı gösteren sade temel çizgisi.
   const footprint = new THREE.Group();
-  const footprintWidth = 9.2;
-  const footprintDepth = 7.6;
+  const footprintWidth = 11.8;
+  const footprintDepth = 9.4;
   addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, footprintDepth / 2), blueprintMaterial);
   addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, -footprintDepth / 2), blueprintMaterial);
   addBox(footprint, new THREE.Vector3(0.11, 0.045, footprintDepth), new THREE.Vector3(footprintWidth / 2, 0.035, 0), blueprintMaterial);
@@ -758,38 +851,63 @@ const createTavern = (position: THREE.Vector3) => {
   group.add(footprint);
 
   const floorStage = new THREE.Group();
-  addBox(floorStage, new THREE.Vector3(8.8, 0.18, 7.2), new THREE.Vector3(0, 0.09, 0), floorMaterial);
-  for (let plank = -3; plank <= 3; plank += 1) {
-    addBox(floorStage, new THREE.Vector3(8.45, 0.035, 0.055), new THREE.Vector3(0, 0.198, plank * 0.9), floorAccentMaterial);
+  addBox(floorStage, new THREE.Vector3(11.4, 0.18, 9), new THREE.Vector3(0, 0.09, 0), floorMaterial);
+  for (let plank = -4; plank <= 4; plank += 1) {
+    addBox(floorStage, new THREE.Vector3(11.05, 0.035, 0.055), new THREE.Vector3(0, 0.198, plank * 0.92), floorAccentMaterial);
   }
 
   const wallStage = new THREE.Group();
-  addBox(wallStage, new THREE.Vector3(8.9, 1.05, 0.28), new THREE.Vector3(0, 0.62, 3.5), wallMaterial);
-  addBox(wallStage, new THREE.Vector3(0.28, 1.05, 7.1), new THREE.Vector3(-4.3, 0.62, 0), wallMaterial);
-  addBox(wallStage, new THREE.Vector3(0.28, 1.05, 7.1), new THREE.Vector3(4.3, 0.62, 0), wallMaterial);
-  addBox(wallStage, new THREE.Vector3(3.25, 1.05, 0.28), new THREE.Vector3(-2.75, 0.62, -3.5), wallMaterial);
-  addBox(wallStage, new THREE.Vector3(3.25, 1.05, 0.28), new THREE.Vector3(2.75, 0.62, -3.5), wallMaterial);
-  for (const x of [-4.3, 4.3]) {
-    addBox(wallStage, new THREE.Vector3(0.24, 1.2, 0.38), new THREE.Vector3(x, 0.7, -3.5), darkTrunkMaterial);
-    addBox(wallStage, new THREE.Vector3(0.24, 1.2, 0.38), new THREE.Vector3(x, 0.7, 3.5), darkTrunkMaterial);
+  const wallHeight = 2.45;
+  addBox(wallStage, new THREE.Vector3(11.5, wallHeight, 0.3), new THREE.Vector3(0, wallHeight / 2, -4.5), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(11.5, wallHeight, 0.3), new THREE.Vector3(0, wallHeight / 2, 4.5), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.3, wallHeight, 9.1), new THREE.Vector3(5.7, wallHeight / 2, 0), wallMaterial);
+  // Yol tarafındaki batı duvarı, ortadaki kapı boşluğu korunarak iki parçadır.
+  addBox(wallStage, new THREE.Vector3(0.3, wallHeight, 3.35), new THREE.Vector3(-5.7, wallHeight / 2, -2.78), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.3, wallHeight, 3.35), new THREE.Vector3(-5.7, wallHeight / 2, 2.78), wallMaterial);
+  for (const z of [-4.5, 4.5]) {
+    addBox(wallStage, new THREE.Vector3(0.38, 2.72, 0.38), new THREE.Vector3(-5.7, 1.36, z), darkTrunkMaterial);
+    addBox(wallStage, new THREE.Vector3(0.38, 2.72, 0.38), new THREE.Vector3(5.7, 1.36, z), darkTrunkMaterial);
   }
 
   const entranceStage = new THREE.Group();
-  addBox(entranceStage, new THREE.Vector3(0.28, 2.05, 0.34), new THREE.Vector3(-0.92, 1.08, -3.5), darkTrunkMaterial);
-  addBox(entranceStage, new THREE.Vector3(0.28, 2.05, 0.34), new THREE.Vector3(0.92, 1.08, -3.5), darkTrunkMaterial);
-  addBox(entranceStage, new THREE.Vector3(2.12, 0.28, 0.34), new THREE.Vector3(0, 2.02, -3.5), darkTrunkMaterial);
-  addBox(entranceStage, new THREE.Vector3(4.2, 0.95, 0.72), new THREE.Vector3(1.55, 0.66, 1.82), counterMaterial);
-  addBox(entranceStage, new THREE.Vector3(4.42, 0.18, 0.92), new THREE.Vector3(1.55, 1.19, 1.82), floorAccentMaterial);
-  addBox(entranceStage, new THREE.Vector3(1.55, 0.7, 0.12), new THREE.Vector3(0, 1.48, 3.33), plasterMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.38, 2.55, 0.3), new THREE.Vector3(-5.7, 1.28, -1.08), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.38, 2.55, 0.3), new THREE.Vector3(-5.7, 1.28, 1.08), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.4, 0.3, 2.46), new THREE.Vector3(-5.7, 2.5, 0), darkTrunkMaterial);
+  // Ana servis tezgâhı aynı zamanda müşterilerin sıraya girdiği tek noktadır.
+  addBox(entranceStage, new THREE.Vector3(4.65, 0.98, 0.78), new THREE.Vector3(2.75, 0.68, -2.85), counterMaterial);
+  addBox(entranceStage, new THREE.Vector3(4.9, 0.18, 0.98), new THREE.Vector3(2.75, 1.23, -2.85), floorAccentMaterial);
+  addBox(entranceStage, new THREE.Vector3(2.0, 0.78, 0.12), new THREE.Vector3(2.75, 1.72, -4.3), plasterMaterial);
 
   const furnitureStage = new THREE.Group();
-  addBox(furnitureStage, new THREE.Vector3(2.2, 0.18, 1.35), new THREE.Vector3(-1.8, 0.87, 0.15), counterMaterial);
-  addBox(furnitureStage, new THREE.Vector3(0.18, 0.78, 0.18), new THREE.Vector3(-2.62, 0.42, -0.25), darkTrunkMaterial);
-  addBox(furnitureStage, new THREE.Vector3(0.18, 0.78, 0.18), new THREE.Vector3(-0.98, 0.42, 0.55), darkTrunkMaterial);
-  for (const z of [-1.15, 1.25]) {
-    addBox(furnitureStage, new THREE.Vector3(0.78, 0.14, 0.72), new THREE.Vector3(-1.8, 0.48, z), floorAccentMaterial);
-    addBox(furnitureStage, new THREE.Vector3(0.14, 0.5, 0.14), new THREE.Vector3(-1.8, 0.24, z), darkTrunkMaterial);
+  const tables: TavernTable[] = [];
+  for (const [x, z] of [[-2.7, 1.25], [0.15, 1.25], [-2.7, 3.35], [0.15, 3.35]] as [number, number][]) {
+    const tableGroup = new THREE.Group();
+    tableGroup.position.set(x, 0, z);
+    addBox(tableGroup, new THREE.Vector3(1.45, 0.16, 0.9), new THREE.Vector3(0, 0.82, 0), counterMaterial);
+    addBox(tableGroup, new THREE.Vector3(0.18, 0.76, 0.18), new THREE.Vector3(0, 0.4, 0), darkTrunkMaterial);
+    addBox(tableGroup, new THREE.Vector3(0.72, 0.14, 0.64), new THREE.Vector3(0, 0.46, 0.92), floorAccentMaterial);
+    addBox(tableGroup, new THREE.Vector3(0.14, 0.46, 0.14), new THREE.Vector3(0, 0.23, 0.92), darkTrunkMaterial);
+    furnitureStage.add(tableGroup);
+    tables.push({ group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x, 0, z + 0.92)), occupied: false });
   }
+
+  // Fıçı, içecek alınan gerçek etkileşim noktasıdır.
+  const barrelPosition = position.clone().add(new THREE.Vector3(-3.65, 0, -2.75));
+  const barrel = new THREE.Group();
+  barrel.position.copy(group.worldToLocal(barrelPosition.clone()));
+  const barrelBody = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.25, 12), woodMaterial);
+  barrelBody.position.y = 0.68;
+  barrelBody.castShadow = true;
+  barrel.add(barrelBody);
+  for (const y of [0.25, 0.68, 1.1]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.63, 0.045, 6, 12), new THREE.MeshStandardMaterial({ color: 0x4c4c46, metalness: 0.2, roughness: 0.7 }));
+    band.rotation.x = Math.PI / 2;
+    band.position.y = y;
+    barrel.add(band);
+  }
+  const tap = addBox(barrel, new THREE.Vector3(0.12, 0.12, 0.38), new THREE.Vector3(0, 0.72, 0.72), darkTrunkMaterial);
+  tap.rotation.x = -0.15;
+  furnitureStage.add(barrel);
 
   const stages = [floorStage, wallStage, entranceStage, furnitureStage];
   for (const stage of stages) {
@@ -797,7 +915,7 @@ const createTavern = (position: THREE.Vector3) => {
     group.add(stage);
   }
 
-  const deliveryPosition = position.clone().add(new THREE.Vector3(-3.1, 0, -5.15));
+  const deliveryPosition = position.clone().add(new THREE.Vector3(-4.45, 0, -6.0));
   const deliveryRing = new THREE.Group();
   deliveryRing.position.copy(group.worldToLocal(deliveryPosition.clone()));
   const ringFill = new THREE.Mesh(
@@ -825,6 +943,19 @@ const createTavern = (position: THREE.Vector3) => {
   deliveryRing.add(pile);
   world.add(group);
 
+  const toWorld = (x: number, z: number) => position.clone().add(new THREE.Vector3(x, 0, z));
+  const colliders: TavernCollider[] = [
+    { center: toWorld(0, -4.5), halfX: 5.75, halfZ: 0.15, stage: 1 },
+    { center: toWorld(0, 4.5), halfX: 5.75, halfZ: 0.15, stage: 1 },
+    { center: toWorld(5.7, 0), halfX: 0.15, halfZ: 4.55, stage: 1 },
+    { center: toWorld(-5.7, -2.78), halfX: 0.15, halfZ: 1.68, stage: 1 },
+    { center: toWorld(-5.7, 2.78), halfX: 0.15, halfZ: 1.68, stage: 1 },
+    { center: toWorld(2.75, -2.85), halfX: 2.45, halfZ: 0.49, stage: 2 },
+    { center: barrelPosition, halfX: 0.7, halfZ: 0.7, stage: 3 },
+    ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 })),
+    ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 })),
+  ];
+
   tavern = {
     group,
     position: position.clone(),
@@ -838,6 +969,12 @@ const createTavern = (position: THREE.Vector3) => {
     completed: false,
     deliveryClock: 0,
     delivering: false,
+    barrelPosition,
+    entrancePosition: toWorld(-5.95, 0),
+    exitPosition: toWorld(-8.2, -5.5),
+    queueOrigin: toWorld(2.75, -1.65),
+    tables,
+    colliders,
   };
 };
 
@@ -852,8 +989,8 @@ const seededRandom = (() => {
 const isClearForTree = (position: THREE.Vector3) => {
   if (Math.abs(position.x + position.z * 0.13) < 3.8) return false;
   if (position.distanceTo(new THREE.Vector3(0, 0, 5)) < 5.1) return false;
-  if (Math.abs(position.x - 7) < 6.7 && Math.abs(position.z - 6.6) < 6.1) return false;
-  if (Math.abs(position.z - 2.9) < 2.4 && position.x > -1 && position.x < 10) return false;
+  if (Math.abs(position.x - 7.8) < 7.2 && Math.abs(position.z + 2.2) < 6.2) return false;
+  if (Math.abs(position.z + 2.2) < 2.4 && position.x > -2 && position.x < 5) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.55);
 };
 
@@ -883,14 +1020,14 @@ const createRock = (position: THREE.Vector3, scale: number) => {
 
 for (let index = 0; index < 28; index += 1) {
   const position = new THREE.Vector3((seededRandom() - 0.5) * 48, 0, (seededRandom() - 0.5) * 63);
-  const outsideTavern = !(Math.abs(position.x - 7) < 6.2 && Math.abs(position.z - 6.6) < 5.8);
-  const outsideTavernPath = !(Math.abs(position.z - 2.9) < 2.2 && position.x > -1 && position.x < 10);
+  const outsideTavern = !(Math.abs(position.x - 7.8) < 7.1 && Math.abs(position.z + 2.2) < 6.1);
+  const outsideTavernPath = !(Math.abs(position.z + 2.2) < 2.2 && position.x > -2 && position.x < 5);
   if (Math.abs(position.x + position.z * 0.13) > 4 && outsideTavern && outsideTavernPath) {
     createRock(position, 0.25 + seededRandom() * 0.38);
   }
 }
 
-createTavern(new THREE.Vector3(7, 0, 6.6));
+createTavern(new THREE.Vector3(7.8, 0, -2.2));
 // Eski satın alma alanı kurucusu bu prototip aşamasında çağrılmıyor.
 void createBuildZone;
 
@@ -1142,8 +1279,248 @@ const updateTavernStages = () => {
 const finishTavern = () => {
   tavern.completed = true;
   tavern.group.remove(tavern.deliveryRing);
+  customerSpawnClock = 3.2;
   audio.coin();
-  showToast('Taverna kuruldu! Sırada ilk müşteriler var.');
+  showToast('Taverna açıldı! Fıçıdan içecek al ve sıraya servis et.');
+};
+
+const makeDrinkMug = () => {
+  const mug = new THREE.Group();
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.105, 0.09, 0.25, 9),
+    new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
+  );
+  cup.position.y = 0.12;
+  const drink = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.088, 0.088, 0.018, 9),
+    new THREE.MeshStandardMaterial({ color: 0xc87826, roughness: 0.55 }),
+  );
+  drink.position.y = 0.25;
+  mug.add(cup, drink);
+  mug.visible = false;
+  return mug;
+};
+
+const queueTarget = (index: number) => tavern.queueOrigin.clone().add(new THREE.Vector3(0, 0, index * 0.88));
+
+const moveCustomerTowards = (customer: CustomerData, target: THREE.Vector3, delta: number, speed = 2.25) => {
+  const direction = target.clone().sub(customer.group.position);
+  direction.y = 0;
+  const distance = direction.length();
+  if (distance < 0.045) {
+    customer.group.position.copy(target);
+    return true;
+  }
+  direction.normalize();
+  customer.group.position.addScaledVector(direction, Math.min(distance, speed * delta));
+  customer.group.rotation.y = Math.atan2(-direction.x, -direction.z);
+  customer.walkClock += delta * 9;
+  customer.visual.position.y = Math.abs(Math.sin(customer.walkClock)) * 0.045;
+  customer.visual.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.userData.walkLeg) {
+      child.rotation.x = Math.sin(customer.walkClock) * 0.3 * Number(child.userData.walkLeg);
+    }
+  });
+  return false;
+};
+
+const spawnCustomer = () => {
+  const group = new THREE.Group();
+  const visual = createCustomerVisual(customers.length + Math.floor(ambientTime));
+  const mug = makeDrinkMug();
+  mug.position.set(0.38, 0.9, -0.28);
+  group.add(visual, mug);
+  const spawnPosition = tavern.exitPosition.clone().add(new THREE.Vector3(-1.8, 0, -2.2));
+  group.position.copy(spawnPosition);
+  world.add(group);
+  const customer: CustomerData = {
+    group,
+    visual,
+    state: 'arriving',
+    path: [
+      tavern.entrancePosition.clone().add(new THREE.Vector3(-0.9, 0, 0)),
+      tavern.entrancePosition.clone().add(new THREE.Vector3(0.9, 0, 0)),
+    ],
+    queueIndex: -1,
+    table: null,
+    drinkClock: 0,
+    walkClock: 0,
+    mug,
+  };
+  customers.push(customer);
+};
+
+const refreshQueue = () => {
+  customerQueue.forEach((customer, index) => {
+    customer.queueIndex = index;
+  });
+};
+
+const animateCustomerPayment = (position: THREE.Vector3) => {
+  const material = new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.72 });
+  const banknote = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.045, 0.21), material);
+  const start = position.clone().add(new THREE.Vector3(0, 1.05, 0));
+  const target = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+  banknote.position.copy(start);
+  scene.add(banknote);
+  addTween(0.48, (progress) => {
+    banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
+    banknote.position.y += Math.sin(progress * Math.PI) * 0.85;
+    banknote.rotation.y += 0.3;
+  }, () => {
+    scene.remove(banknote);
+    banknote.geometry.dispose();
+    material.dispose();
+  });
+};
+
+const spawnTableTip = (table: TavernTable) => {
+  const group = new THREE.Group();
+  group.position.copy(table.group.position.clone().add(tavern.position));
+  group.position.y = 1.02;
+  for (let index = 0; index < 2; index += 1) {
+    const note = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.035, 0.2),
+      new THREE.MeshStandardMaterial({ color: index === 0 ? 0x20bf55 : 0x65e883, roughness: 0.7 }),
+    );
+    note.position.set((index - 0.5) * 0.11, index * 0.045, 0);
+    note.rotation.y = (index - 0.5) * 0.22;
+    note.castShadow = true;
+    group.add(note);
+  }
+  world.add(group);
+  tips.push({ group, value: 2, collecting: false });
+  bounceGroup(group);
+};
+
+const removeCustomer = (customer: CustomerData) => {
+  world.remove(customer.group);
+  const customerIndex = customers.indexOf(customer);
+  if (customerIndex >= 0) customers.splice(customerIndex, 1);
+};
+
+const sendCustomerAway = (customer: CustomerData) => {
+  customer.state = 'leaving';
+  customer.path = [
+    tavern.entrancePosition.clone().add(new THREE.Vector3(0.85, 0, 0)),
+    tavern.entrancePosition.clone().add(new THREE.Vector3(-0.9, 0, 0)),
+    tavern.exitPosition.clone(),
+  ];
+  customer.visual.position.y = 0;
+};
+
+const serveFrontCustomer = () => {
+  const customer = customerQueue[0];
+  if (!customer || !playerHasDrink || customer.group.position.distanceTo(player.position) > 1.55) return;
+  playerHasDrink = false;
+  carriedMug.visible = false;
+  customerQueue.shift();
+  refreshQueue();
+  customer.mug.visible = true;
+  state.gold += 4;
+  animateCustomerPayment(customer.group.position);
+  audio.coin();
+
+  const table = tavern.tables.find((candidate) => !candidate.occupied) ?? null;
+  if (table) {
+    table.occupied = true;
+    customer.table = table;
+    customer.state = 'toSeat';
+  } else {
+    customer.state = 'standingDrink';
+    customer.drinkClock = 0;
+    const standingSlot = customers.indexOf(customer) % 3;
+    customer.path = [tavern.queueOrigin.clone().add(new THREE.Vector3(-2.0, 0, 0.25 + standingSlot * 0.7))];
+  }
+  updateUI();
+};
+
+const updateCustomers = (delta: number) => {
+  if (!tavern.completed) return;
+  customerSpawnClock -= delta;
+  if (customerSpawnClock <= 0 && customers.length < 8) {
+    spawnCustomer();
+    customerSpawnClock = 4.8;
+  }
+
+  for (const customer of [...customers]) {
+    if (customer.state === 'arriving' || customer.state === 'leaving') {
+      const target = customer.path[0];
+      if (!target) {
+        if (customer.state === 'arriving') {
+          customer.state = 'queue';
+          customerQueue.push(customer);
+          refreshQueue();
+        } else {
+          removeCustomer(customer);
+        }
+        continue;
+      }
+      if (moveCustomerTowards(customer, target, delta)) customer.path.shift();
+    } else if (customer.state === 'queue') {
+      moveCustomerTowards(customer, queueTarget(customer.queueIndex), delta, 1.9);
+    } else if (customer.state === 'toSeat' && customer.table) {
+      if (moveCustomerTowards(customer, customer.table.seatPosition, delta)) {
+        customer.state = 'seated';
+        customer.drinkClock = 0;
+        customer.visual.position.y = -0.3;
+        customer.group.rotation.y = Math.PI;
+      }
+    } else if (customer.state === 'seated') {
+      customer.drinkClock += delta;
+      customer.mug.rotation.z = Math.sin(customer.drinkClock * 3.6) * 0.12;
+      if (customer.drinkClock >= 4.1 && customer.table) {
+        spawnTableTip(customer.table);
+        customer.table.occupied = false;
+        customer.table = null;
+        customer.mug.visible = false;
+        sendCustomerAway(customer);
+      }
+    } else if (customer.state === 'standingDrink') {
+      if (customer.path[0] && moveCustomerTowards(customer, customer.path[0], delta, 1.75)) customer.path.shift();
+      customer.drinkClock += delta;
+      customer.mug.rotation.z = Math.sin(customer.drinkClock * 4) * 0.14;
+      if (customer.drinkClock >= 2.5) {
+        customer.mug.visible = false;
+        sendCustomerAway(customer);
+      }
+    }
+  }
+
+  if (!playerHasDrink && player.position.distanceTo(tavern.barrelPosition) < 1.5) {
+    drinkFillClock += delta;
+    if (drinkFillClock >= 0.48) {
+      drinkFillClock = 0;
+      playerHasDrink = true;
+      carriedMug.visible = true;
+      audio.pickup();
+      showToast('İçecek hazır · sıranın başına götür');
+    }
+  } else {
+    drinkFillClock = 0;
+  }
+  serveFrontCustomer();
+};
+
+const updateTips = () => {
+  for (const tip of [...tips]) {
+    if (tip.collecting || tip.group.position.distanceTo(player.position) >= 1.45) continue;
+    tip.collecting = true;
+    const start = tip.group.position.clone();
+    const target = player.position.clone().add(new THREE.Vector3(0, 1, 0));
+    addTween(0.36, (progress) => {
+      tip.group.position.lerpVectors(start, target, easeInOutCubic(progress));
+      tip.group.position.y += Math.sin(progress * Math.PI) * 0.65;
+    }, () => {
+      world.remove(tip.group);
+      const index = tips.indexOf(tip);
+      if (index >= 0) tips.splice(index, 1);
+      state.gold += tip.value;
+      audio.coin();
+      updateUI();
+      showToast(`Masa bahşişi +${tip.value} para`);
+    });
+  }
 };
 
 const deliverLogToTavern = () => {
@@ -1434,6 +1811,16 @@ const collidesAt = (position: THREE.Vector3) => {
   for (const tree of trees) {
     if (tree.alive && position.distanceToSquared(tree.group.position) < 0.68 * 0.68) return true;
   }
+  if (tavern) {
+    const playerRadius = 0.36;
+    for (const collider of tavern.colliders) {
+      if (!tavern.stages[collider.stage]?.visible) continue;
+      if (
+        Math.abs(position.x - collider.center.x) < collider.halfX + playerRadius
+        && Math.abs(position.z - collider.center.z) < collider.halfZ + playerRadius
+      ) return true;
+    }
+  }
   return false;
 };
 
@@ -1449,7 +1836,17 @@ const updatePlayer = (delta: number) => {
     const nextPosition = player.position.clone().addScaledVector(desiredMovement, state.speed * delta);
     nextPosition.x = THREE.MathUtils.clamp(nextPosition.x, -25, 25);
     nextPosition.z = THREE.MathUtils.clamp(nextPosition.z, -33, 33);
-    if (!collidesAt(nextPosition)) player.position.copy(nextPosition);
+    if (!collidesAt(nextPosition)) {
+      player.position.copy(nextPosition);
+    } else {
+      // Duvar ve mobilyalara çapraz yürürken oyuncunun köşeye yapışmasını önle.
+      const slideX = player.position.clone();
+      slideX.x = nextPosition.x;
+      const slideZ = player.position.clone();
+      slideZ.z = nextPosition.z;
+      if (!collidesAt(slideX)) player.position.copy(slideX);
+      else if (!collidesAt(slideZ)) player.position.copy(slideZ);
+    }
     const targetRotation = Math.atan2(-desiredMovement.x, -desiredMovement.z);
     let difference = targetRotation - playerRotation;
     difference = Math.atan2(Math.sin(difference), Math.cos(difference));
@@ -1571,6 +1968,10 @@ const updateContextHint = () => {
     message = state.carried > 0
       ? `Taverna kuruluyor · ${tavern.paid}/${tavern.cost.amount} odun`
       : `Taverna için odun getir · ${tavern.paid}/${tavern.cost.amount}`;
+  } else if (tavern.completed && tavern.barrelPosition.distanceTo(player.position) < 1.8) {
+    message = playerHasDrink ? 'Elinde bir içecek var · sıranın başına götür' : 'Fıçıdan içecek dolduruluyor';
+  } else if (tavern.completed && customerQueue[0]?.group.position.distanceTo(player.position) < 1.8) {
+    message = playerHasDrink ? 'İçecek servis ediliyor' : 'Önce fıçıdan içecek al';
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
     message = 'Taşıma kapasitesi dolu';
   }
@@ -1678,6 +2079,8 @@ const animate = () => {
     updateStations(delta);
     updateBuildZones(delta);
     updateTavern(delta);
+    updateCustomers(delta);
+    updateTips();
     updateOffer(delta);
   }
   updateTweens(delta);
