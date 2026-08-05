@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import './style.css';
 
-type UpgradeKind = 'capacity' | 'damage' | 'speed';
+type UpgradeKind = 'capacity' | 'damage' | 'axeSpeed';
+type CostType = 'money' | 'wood';
+
+interface ResourceCost {
+  type: CostType;
+  amount: number;
+}
 
 interface TreeData {
   group: THREE.Group;
@@ -35,6 +41,21 @@ interface BuildZoneData {
   paid: number;
   built: boolean;
   paymentClock: number;
+}
+
+interface TavernData {
+  group: THREE.Group;
+  position: THREE.Vector3;
+  deliveryPosition: THREE.Vector3;
+  deliveryRing: THREE.Group;
+  pile: THREE.Group;
+  stages: THREE.Group[];
+  label: THREE.Mesh;
+  cost: ResourceCost;
+  paid: number;
+  completed: boolean;
+  deliveryClock: number;
+  delivering: boolean;
 }
 
 interface TweenData {
@@ -301,6 +322,13 @@ mainPath.position.y = 0.012;
 mainPath.receiveShadow = true;
 world.add(mainPath);
 
+// Ana yoldan tavernanın girişine uzanan müşteri yolu.
+const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 3.2), pathMaterial);
+tavernPath.rotation.x = -Math.PI / 2;
+tavernPath.position.set(4.35, 0.018, 2.9);
+tavernPath.receiveShadow = true;
+world.add(tavernPath);
+
 const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x9f5c2d, roughness: 0.85 });
 const woodEndMaterial = new THREE.MeshStandardMaterial({ color: 0xe1ad63, roughness: 0.9 });
 const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x795029, roughness: 1 });
@@ -343,8 +371,11 @@ const state = {
   capacity: 5,
   damage: 1,
   speed: 4.8,
-  levels: { capacity: 1, damage: 1, speed: 1 },
+  axeInterval: 1,
+  levels: { capacity: 1, damage: 1, axeSpeed: 1 },
 };
+
+let tavern: TavernData;
 
 const offer: OfferData = {
   wood: 8,
@@ -353,6 +384,7 @@ const offer: OfferData = {
   active: true,
   cooldown: 0,
 };
+offerButton.classList.add('hidden');
 
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
 const easeInOutCubic = (value: number) => value < 0.5
@@ -517,7 +549,7 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
   return tree;
 };
 
-const makePurchaseLabel = (paid: number, cost: number) => {
+const makePurchaseLabel = (paid: number, cost: number, costType: CostType = 'money') => {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
@@ -533,11 +565,11 @@ const makePurchaseLabel = (paid: number, cost: number) => {
   label.renderOrder = 220;
   label.userData.canvas = canvas;
   label.userData.context = context;
-  updatePurchaseLabel(label, paid, cost);
+  updatePurchaseLabel(label, paid, cost, costType);
   return label;
 };
 
-const updatePurchaseLabel = (label: THREE.Mesh, paid: number, cost: number) => {
+const updatePurchaseLabel = (label: THREE.Mesh, paid: number, cost: number, costType: CostType = 'money') => {
   const canvas = label.userData.canvas as HTMLCanvasElement;
   const context = label.userData.context as CanvasRenderingContext2D;
   context.clearRect(0, 0, canvas.width, canvas.height);
@@ -554,25 +586,44 @@ const updatePurchaseLabel = (label: THREE.Mesh, paid: number, cost: number) => {
   context.fillText(String(remaining), 128, 78);
   context.shadowColor = 'transparent';
 
-  context.fillStyle = '#20bf55';
-  context.strokeStyle = '#087b36';
-  context.lineWidth = 9;
-  context.beginPath();
-  context.roundRect(76, 138, 104, 66, 10);
-  context.fill();
-  context.stroke();
-  context.fillStyle = '#65e883';
-  context.beginPath();
-  context.arc(128, 171, 19, 0, Math.PI * 2);
-  context.fill();
-  context.strokeStyle = '#0b8f3e';
-  context.lineWidth = 6;
-  context.beginPath();
-  context.moveTo(86, 153);
-  context.lineTo(86, 189);
-  context.moveTo(170, 153);
-  context.lineTo(170, 189);
-  context.stroke();
+  if (costType === 'wood') {
+    context.save();
+    context.translate(128, 170);
+    context.rotate(-0.12);
+    context.fillStyle = '#a96432';
+    context.strokeStyle = '#653a20';
+    context.lineWidth = 8;
+    context.beginPath();
+    context.roundRect(-58, -23, 116, 46, 22);
+    context.fill();
+    context.stroke();
+    context.fillStyle = '#e3b36e';
+    context.beginPath();
+    context.arc(51, 0, 20, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.restore();
+  } else {
+    context.fillStyle = '#20bf55';
+    context.strokeStyle = '#087b36';
+    context.lineWidth = 9;
+    context.beginPath();
+    context.roundRect(76, 138, 104, 66, 10);
+    context.fill();
+    context.stroke();
+    context.fillStyle = '#65e883';
+    context.beginPath();
+    context.arc(128, 171, 19, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = '#0b8f3e';
+    context.lineWidth = 6;
+    context.beginPath();
+    context.moveTo(86, 153);
+    context.lineTo(86, 189);
+    context.moveTo(170, 153);
+    context.lineTo(170, 189);
+    context.stroke();
+  }
 
   const material = label.material as THREE.MeshBasicMaterial;
   if (material.map) material.map.needsUpdate = true;
@@ -686,6 +737,110 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   });
 };
 
+const createTavern = (position: THREE.Vector3) => {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xb9854f, roughness: 0.95 });
+  const floorAccentMaterial = new THREE.MeshStandardMaterial({ color: 0xd7aa6d, roughness: 0.95 });
+  const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe0c18c, roughness: 1 });
+  const plasterMaterial = new THREE.MeshStandardMaterial({ color: 0xead6a8, roughness: 1 });
+  const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x754529, roughness: 0.85 });
+  const blueprintMaterial = new THREE.MeshBasicMaterial({ color: 0xf8e5b9, transparent: true, opacity: 0.45 });
+
+  // İnşaat başlamadan önce tavernanın kaplayacağı alanı gösteren sade temel çizgisi.
+  const footprint = new THREE.Group();
+  const footprintWidth = 9.2;
+  const footprintDepth = 7.6;
+  addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, footprintDepth / 2), blueprintMaterial);
+  addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, -footprintDepth / 2), blueprintMaterial);
+  addBox(footprint, new THREE.Vector3(0.11, 0.045, footprintDepth), new THREE.Vector3(footprintWidth / 2, 0.035, 0), blueprintMaterial);
+  addBox(footprint, new THREE.Vector3(0.11, 0.045, footprintDepth), new THREE.Vector3(-footprintWidth / 2, 0.035, 0), blueprintMaterial);
+  group.add(footprint);
+
+  const floorStage = new THREE.Group();
+  addBox(floorStage, new THREE.Vector3(8.8, 0.18, 7.2), new THREE.Vector3(0, 0.09, 0), floorMaterial);
+  for (let plank = -3; plank <= 3; plank += 1) {
+    addBox(floorStage, new THREE.Vector3(8.45, 0.035, 0.055), new THREE.Vector3(0, 0.198, plank * 0.9), floorAccentMaterial);
+  }
+
+  const wallStage = new THREE.Group();
+  addBox(wallStage, new THREE.Vector3(8.9, 1.05, 0.28), new THREE.Vector3(0, 0.62, 3.5), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.28, 1.05, 7.1), new THREE.Vector3(-4.3, 0.62, 0), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.28, 1.05, 7.1), new THREE.Vector3(4.3, 0.62, 0), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(3.25, 1.05, 0.28), new THREE.Vector3(-2.75, 0.62, -3.5), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(3.25, 1.05, 0.28), new THREE.Vector3(2.75, 0.62, -3.5), wallMaterial);
+  for (const x of [-4.3, 4.3]) {
+    addBox(wallStage, new THREE.Vector3(0.24, 1.2, 0.38), new THREE.Vector3(x, 0.7, -3.5), darkTrunkMaterial);
+    addBox(wallStage, new THREE.Vector3(0.24, 1.2, 0.38), new THREE.Vector3(x, 0.7, 3.5), darkTrunkMaterial);
+  }
+
+  const entranceStage = new THREE.Group();
+  addBox(entranceStage, new THREE.Vector3(0.28, 2.05, 0.34), new THREE.Vector3(-0.92, 1.08, -3.5), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.28, 2.05, 0.34), new THREE.Vector3(0.92, 1.08, -3.5), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(2.12, 0.28, 0.34), new THREE.Vector3(0, 2.02, -3.5), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(4.2, 0.95, 0.72), new THREE.Vector3(1.55, 0.66, 1.82), counterMaterial);
+  addBox(entranceStage, new THREE.Vector3(4.42, 0.18, 0.92), new THREE.Vector3(1.55, 1.19, 1.82), floorAccentMaterial);
+  addBox(entranceStage, new THREE.Vector3(1.55, 0.7, 0.12), new THREE.Vector3(0, 1.48, 3.33), plasterMaterial);
+
+  const furnitureStage = new THREE.Group();
+  addBox(furnitureStage, new THREE.Vector3(2.2, 0.18, 1.35), new THREE.Vector3(-1.8, 0.87, 0.15), counterMaterial);
+  addBox(furnitureStage, new THREE.Vector3(0.18, 0.78, 0.18), new THREE.Vector3(-2.62, 0.42, -0.25), darkTrunkMaterial);
+  addBox(furnitureStage, new THREE.Vector3(0.18, 0.78, 0.18), new THREE.Vector3(-0.98, 0.42, 0.55), darkTrunkMaterial);
+  for (const z of [-1.15, 1.25]) {
+    addBox(furnitureStage, new THREE.Vector3(0.78, 0.14, 0.72), new THREE.Vector3(-1.8, 0.48, z), floorAccentMaterial);
+    addBox(furnitureStage, new THREE.Vector3(0.14, 0.5, 0.14), new THREE.Vector3(-1.8, 0.24, z), darkTrunkMaterial);
+  }
+
+  const stages = [floorStage, wallStage, entranceStage, furnitureStage];
+  for (const stage of stages) {
+    stage.visible = false;
+    group.add(stage);
+  }
+
+  const deliveryPosition = position.clone().add(new THREE.Vector3(-3.1, 0, -5.15));
+  const deliveryRing = new THREE.Group();
+  deliveryRing.position.copy(group.worldToLocal(deliveryPosition.clone()));
+  const ringFill = new THREE.Mesh(
+    new THREE.CircleGeometry(1.5, 36),
+    new THREE.MeshBasicMaterial({ color: 0xf0c95b, transparent: true, opacity: 0.3, side: THREE.DoubleSide }),
+  );
+  const ringEdge = new THREE.Mesh(
+    new THREE.RingGeometry(1.38, 1.54, 36),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
+  );
+  ringFill.rotation.x = -Math.PI / 2;
+  ringEdge.rotation.x = -Math.PI / 2;
+  ringFill.position.y = 0.035;
+  ringEdge.position.y = 0.048;
+  deliveryRing.add(ringFill, ringEdge);
+  group.add(deliveryRing);
+
+  const label = makePurchaseLabel(0, 12, 'wood');
+  label.position.set(0, 0.062, 0);
+  deliveryRing.add(label);
+
+  const pile = new THREE.Group();
+  // Teslim edilen kütükler maliyet sayısını kapatmasın diye alanın yanında birikir.
+  pile.position.set(1.9, 0.12, 0.05);
+  deliveryRing.add(pile);
+  world.add(group);
+
+  tavern = {
+    group,
+    position: position.clone(),
+    deliveryPosition,
+    deliveryRing,
+    pile,
+    stages,
+    label,
+    cost: { type: 'wood', amount: 12 },
+    paid: 0,
+    completed: false,
+    deliveryClock: 0,
+    delivering: false,
+  };
+};
+
 const seededRandom = (() => {
   let seed = 47821;
   return () => {
@@ -697,12 +852,12 @@ const seededRandom = (() => {
 const isClearForTree = (position: THREE.Vector3) => {
   if (Math.abs(position.x + position.z * 0.13) < 3.8) return false;
   if (position.distanceTo(new THREE.Vector3(0, 0, 5)) < 5.1) return false;
-  const reserved = [new THREE.Vector3(12, 0, -15), new THREE.Vector3(-13, 0, -9), new THREE.Vector3(-10, 0, 20)];
-  if (!reserved.every((point) => position.distanceTo(point) > 3.7)) return false;
+  if (Math.abs(position.x - 7) < 6.7 && Math.abs(position.z - 6.6) < 6.1) return false;
+  if (Math.abs(position.z - 2.9) < 2.4 && position.x > -1 && position.x < 10) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.55);
 };
 
-for (let index = 0; index < 68; index += 1) {
+for (let index = 0; index < 30; index += 1) {
   let position = new THREE.Vector3();
   let attempts = 0;
   do {
@@ -728,13 +883,16 @@ const createRock = (position: THREE.Vector3, scale: number) => {
 
 for (let index = 0; index < 28; index += 1) {
   const position = new THREE.Vector3((seededRandom() - 0.5) * 48, 0, (seededRandom() - 0.5) * 63);
-  if (Math.abs(position.x + position.z * 0.13) > 4) createRock(position, 0.25 + seededRandom() * 0.38);
+  const outsideTavern = !(Math.abs(position.x - 7) < 6.2 && Math.abs(position.z - 6.6) < 5.8);
+  const outsideTavernPath = !(Math.abs(position.z - 2.9) < 2.2 && position.x > -1 && position.x < 10);
+  if (Math.abs(position.x + position.z * 0.13) > 4 && outsideTavern && outsideTavernPath) {
+    createRock(position, 0.25 + seededRandom() * 0.38);
+  }
 }
 
-createStation(new THREE.Vector3(0, 0, 5));
-createBuildZone(new THREE.Vector3(12, 0, -15), new THREE.Vector3(-2.8, 0, 0.4), 5);
-createBuildZone(new THREE.Vector3(-13, 0, -9), new THREE.Vector3(2.8, 0, 0.4), 5);
-createBuildZone(new THREE.Vector3(-10, 0, 20), new THREE.Vector3(2.8, 0, -0.4), 5);
+createTavern(new THREE.Vector3(7, 0, 6.6));
+// Eski satın alma alanı kurucusu bu prototip aşamasında çağrılmıyor.
+void createBuildZone;
 
 const spawnParticles = (position: THREE.Vector3, color: number, count: number) => {
   for (let index = 0; index < count; index += 1) {
@@ -869,21 +1027,10 @@ const fellTree = (tree: TreeData) => {
   }, () => {
     spawnFallenLogs(treePosition);
     world.remove(tree.group);
-    window.setTimeout(() => {
-      tree.hp = 3;
-      tree.alive = true;
-      tree.rangeIndicator.visible = true;
-      tree.group.position.copy(tree.home);
-      tree.group.rotation.set(0, 0, 0);
-      tree.group.scale.setScalar(0.04);
-      world.add(tree.group);
-      addTween(0.75, (progress) => tree.group.scale.setScalar(easeOutBack(progress)));
-    }, 12000);
   });
 };
 
 let chopClock = 0;
-const chopDuration = 1;
 
 const hitTree = (tree: TreeData) => {
   if (!tree.alive) return;
@@ -965,32 +1112,125 @@ const unloadOneLog = (station: StationData) => {
   updateUI();
 };
 
-const upgradeCosts = () => ({
-  capacity: 15 + (state.levels.capacity - 1) * 15,
-  damage: 25 + (state.levels.damage - 1) * 25,
-  speed: 20 + (state.levels.speed - 1) * 18,
+const rebuildTavernPile = () => {
+  tavern.pile.clear();
+  for (let index = 0; index < tavern.paid; index += 1) {
+    const log = makeLogMesh(0.66);
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    log.position.set((column - 1) * 0.58, 0.22 + row * 0.28, 0);
+    tavern.pile.add(log);
+  }
+};
+
+const revealTavernStage = (stageIndex: number) => {
+  const stage = tavern.stages[stageIndex];
+  if (!stage || stage.visible) return;
+  stage.visible = true;
+  stage.scale.set(0.04, 0.04, 0.04);
+  addTween(0.62, (progress) => stage.scale.setScalar(easeOutBack(progress)), () => stage.scale.setScalar(1));
+  spawnParticles(tavern.position.clone().add(new THREE.Vector3(0, 0.2, 0)), 0xf2d06b, 12);
+};
+
+const updateTavernStages = () => {
+  const thresholds = [3, 6, 9, 12];
+  thresholds.forEach((threshold, index) => {
+    if (tavern.paid >= threshold) revealTavernStage(index);
+  });
+};
+
+const finishTavern = () => {
+  tavern.completed = true;
+  tavern.group.remove(tavern.deliveryRing);
+  audio.coin();
+  showToast('Taverna kuruldu! Sırada ilk müşteriler var.');
+};
+
+const deliverLogToTavern = () => {
+  if (tavern.completed || tavern.delivering || state.carried <= 0 || stackMeshes.length === 0) return;
+  tavern.delivering = true;
+  const topLog = stackMeshes[stackMeshes.length - 1];
+  const start = new THREE.Vector3();
+  topLog.getWorldPosition(start);
+  state.carried -= 1;
+  rebuildPlayerStack();
+  updateUI();
+
+  const flyingLog = makeLogMesh(0.72);
+  flyingLog.position.copy(start);
+  scene.add(flyingLog);
+  const nextIndex = tavern.paid;
+  const target = tavern.deliveryPosition.clone().add(new THREE.Vector3(
+    1.9 + ((nextIndex % 3) - 1) * 0.58,
+    0.34 + Math.floor(nextIndex / 3) * 0.28,
+    0.05,
+  ));
+  addTween(0.34, (progress) => {
+    flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
+    flyingLog.position.y += Math.sin(progress * Math.PI) * 0.9;
+    flyingLog.rotation.y += 0.28;
+  }, () => {
+    scene.remove(flyingLog);
+    tavern.paid += 1;
+    tavern.delivering = false;
+    audio.unload();
+    rebuildTavernPile();
+    updatePurchaseLabel(tavern.label, tavern.paid, tavern.cost.amount, tavern.cost.type);
+    updateTavernStages();
+    bounceGroup(tavern.pile);
+    if (tavern.paid >= tavern.cost.amount) finishTavern();
+  });
+};
+
+const updateTavern = (delta: number) => {
+  if (tavern.completed) return;
+  if (tavern.deliveryPosition.distanceTo(player.position) < 1.85 && state.carried > 0 && !tavern.delivering) {
+    tavern.deliveryClock += delta;
+    if (tavern.deliveryClock >= 0.18) {
+      tavern.deliveryClock = 0;
+      deliverLogToTavern();
+    }
+  } else {
+    tavern.deliveryClock = 0;
+  }
+};
+
+const upgradeCosts = (): Record<UpgradeKind, ResourceCost> => ({
+  capacity: { type: 'money', amount: 15 + (state.levels.capacity - 1) * 15 },
+  damage: { type: 'money', amount: 25 + (state.levels.damage - 1) * 25 },
+  axeSpeed: { type: 'wood', amount: 5 + (state.levels.axeSpeed - 1) * 3 },
 });
+
+const resourceAmount = (type: CostType) => type === 'money' ? state.gold : state.carried;
+
+const spendResource = (cost: ResourceCost) => {
+  if (cost.type === 'money') state.gold -= cost.amount;
+  else {
+    state.carried -= cost.amount;
+    rebuildPlayerStack();
+  }
+};
 
 const buyUpgrade = (kind: UpgradeKind) => {
   const costs = upgradeCosts();
   const cost = costs[kind];
-  if (state.gold < cost) {
-    showToast('Yeterli paran yok');
+  if (resourceAmount(cost.type) < cost.amount) {
+    showToast(cost.type === 'money' ? 'Yeterli paran yok' : 'Yeterli odunun yok');
     return;
   }
-  state.gold -= cost;
+  spendResource(cost);
   audio.coin();
   state.levels[kind] += 1;
   if (kind === 'capacity') state.capacity += 2;
   if (kind === 'damage') state.damage += 1;
-  if (kind === 'speed') state.speed *= 1.12;
+  if (kind === 'axeSpeed') state.axeInterval = Math.max(0.42, state.axeInterval * 0.82);
   updateUI();
   showToast('Geliştirme satın alındı!');
 };
 
 const updateUI = () => {
   goldCount.textContent = `${state.gold}`;
-  woodCount.textContent = `${state.carried}/${state.capacity} · ${state.stock}`;
+  woodCount.textContent = `${state.carried}/${state.capacity}`;
   offerWood.textContent = `${offer.wood}`;
   offerGold.textContent = `${offer.gold}`;
   const time = Math.max(0, Math.ceil(offer.remaining));
@@ -1003,13 +1243,21 @@ const updateUI = () => {
   const costs = upgradeCosts();
   getElement<HTMLElement>('capacity-value').textContent = `${state.capacity} → ${state.capacity + 2}`;
   getElement<HTMLElement>('damage-value').textContent = `${state.damage} → ${state.damage + 1}`;
-  getElement<HTMLElement>('speed-value').textContent = `${Math.round((state.speed / 4.8) * 100)}% → ${Math.round((state.speed * 1.12 / 4.8) * 100)}%`;
-  getElement<HTMLElement>('capacity-cost').textContent = `${costs.capacity}`;
-  getElement<HTMLElement>('damage-cost').textContent = `${costs.damage}`;
-  getElement<HTMLElement>('speed-cost').textContent = `${costs.speed}`;
+  getElement<HTMLElement>('axe-speed-value').textContent = `${state.axeInterval.toFixed(2)} sn → ${Math.max(0.42, state.axeInterval * 0.82).toFixed(2)} sn`;
+  const costElements: Record<UpgradeKind, HTMLElement> = {
+    capacity: getElement<HTMLElement>('capacity-cost'),
+    damage: getElement<HTMLElement>('damage-cost'),
+    axeSpeed: getElement<HTMLElement>('axe-speed-cost'),
+  };
+  (Object.keys(costElements) as UpgradeKind[]).forEach((kind) => {
+    const element = costElements[kind];
+    element.textContent = `${costs[kind].amount}`;
+    element.classList.toggle('cash-cost', costs[kind].type === 'money');
+    element.classList.toggle('wood-cost', costs[kind].type === 'wood');
+  });
   document.querySelectorAll<HTMLButtonElement>('.upgrade-card').forEach((button) => {
     const kind = button.dataset.upgrade as UpgradeKind;
-    button.disabled = state.gold < costs[kind];
+    button.disabled = resourceAmount(costs[kind].type) < costs[kind].amount;
   });
 };
 
@@ -1228,15 +1476,15 @@ const updatePlayer = (delta: number) => {
       player.rotation.y = playerRotation;
     }
     chopClock += delta;
-    const chopRatio = Math.min(1, chopClock / chopDuration);
+    const chopRatio = Math.min(1, chopClock / state.axeInterval);
     if (chopRatio < 0.56) {
       axePivot.rotation.z = THREE.MathUtils.lerp(axeRestAngle, axeWindupAngle, easeInOutCubic(chopRatio / 0.56));
     } else {
       axePivot.rotation.z = THREE.MathUtils.lerp(axeWindupAngle, axeStrikeAngle, easeInOutCubic((chopRatio - 0.56) / 0.44));
     }
     toolArm.rotation.z = -0.38 + (axePivot.rotation.z - axeRestAngle) * 0.18;
-    if (chopClock >= chopDuration) {
-      chopClock -= chopDuration;
+    if (chopClock >= state.axeInterval) {
+      chopClock -= state.axeInterval;
       hitTree(nearest);
     }
   } else {
@@ -1317,17 +1565,12 @@ const updateBuildZones = (delta: number) => {
 
 const updateContextHint = () => {
   let message = '';
-  const nearbyZone = buildZones.find((zone) => !zone.built && zone.position.distanceTo(player.position) < 1.8);
-  const nearbyStation = stations.find((station) => station.position.distanceTo(player.position) < 3.15);
+  const nearTavernDelivery = !tavern.completed && tavern.deliveryPosition.distanceTo(player.position) < 2.2;
   const nearbyGroundLog = groundLogs.some((log) => !log.collecting && log.mesh.position.distanceTo(player.position) < 1.6);
-  if (nearbyZone) {
-    message = nearbyZone.paid >= nearbyZone.cost
-      ? 'İstasyon kuruluyor…'
-      : state.gold > 0
-        ? `İnşa için bekle · ${nearbyZone.paid}/${nearbyZone.cost} para`
-        : `İstasyon maliyeti ${nearbyZone.cost} para`;
-  } else if (nearbyStation && state.carried > 0) {
-    message = 'Odunlar istasyona bırakılıyor…';
+  if (nearTavernDelivery) {
+    message = state.carried > 0
+      ? `Taverna kuruluyor · ${tavern.paid}/${tavern.cost.amount} odun`
+      : `Taverna için odun getir · ${tavern.paid}/${tavern.cost.amount}`;
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
     message = 'Taşıma kapasitesi dolu';
   }
@@ -1434,6 +1677,7 @@ const animate = () => {
     updateCollection(delta);
     updateStations(delta);
     updateBuildZones(delta);
+    updateTavern(delta);
     updateOffer(delta);
   }
   updateTweens(delta);
