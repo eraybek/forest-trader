@@ -156,14 +156,39 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   font-size: 18px;
 }
 
-.coin-icon, .big-coin {
-  display: grid;
-  place-items: center;
-  color: #ffd23f;
-  -webkit-text-stroke: 2px #d88b16;
-  filter: drop-shadow(0 1px 0 #8c5512);
+.cash-icon {
+  position: relative;
+  display: inline-block;
+  width: 27px;
+  height: 18px;
+  border: 2px solid #087b36;
+  border-radius: 4px;
+  background: #20bf55;
+  box-shadow: inset 0 0 0 2px #65e883, 0 2px 0 rgba(0,0,0,.2);
+  transform: rotate(-5deg);
 }
-.coin-icon { font-size: 23px; }
+.cash-icon::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  left: 50%;
+  top: 50%;
+  border: 2px solid #087b36;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.big-cash { width: 45px; height: 29px; border-width: 3px; }
+.cash-cost { display: inline-flex; align-items: center; gap: 7px; }
+.cash-cost::after {
+  content: '';
+  width: 22px;
+  height: 14px;
+  border: 2px solid #087b36;
+  border-radius: 3px;
+  background: #20bf55;
+  box-shadow: inset 0 0 0 2px #65e883;
+}
 .log-icon, .big-log { color: #b56b32; text-shadow: 0 2px #72411f; transform: rotate(-8deg); }
 .log-icon { font-size: 22px; }
 
@@ -287,7 +312,7 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 .offer-trade > div { display: grid; place-items: center; }
 .offer-trade strong { font-size: 27px; }
 .offer-trade small { color: #846b4b; font-size: 11px; font-weight: 700; }
-.big-log, .big-coin { font-size: 35px; line-height: 35px; }
+.big-log { font-size: 35px; line-height: 35px; }
 .trade-arrow { color: #9d7445; font-size: 25px; font-weight: 900; }
 .timer-row { display: flex; justify-content: space-between; margin: 14px 4px 8px; color: #725d43; }
 .timer-row strong { color: #c45b35; }
