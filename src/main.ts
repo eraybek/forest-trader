@@ -31,6 +31,7 @@ interface BuildZoneData {
   spawnPosition: THREE.Vector3;
   label: THREE.Sprite;
   progressFill: THREE.Mesh;
+  progressWidth: number;
   cost: number;
   paid: number;
   built: boolean;
@@ -315,14 +316,14 @@ const treeRangeOutlineGeometry = new THREE.RingGeometry(1.93, 2.02, 40);
 const treeRangeFillMaterial = new THREE.MeshBasicMaterial({
   color: 0xffffff,
   transparent: true,
-  opacity: 0.055,
+  opacity: 0.025,
   depthWrite: false,
   side: THREE.DoubleSide,
 });
 const treeRangeOutlineMaterial = new THREE.MeshBasicMaterial({
   color: 0xffffff,
   transparent: true,
-  opacity: 0.48,
+  opacity: 0.26,
   depthWrite: false,
   side: THREE.DoubleSide,
 });
@@ -534,14 +535,14 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
 
 const makePurchaseLabel = (paid: number, cost: number) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 320;
+  canvas.width = 384;
+  canvas.height = 176;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context is unavailable.');
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
-  sprite.scale.set(3.65, 2.28, 1);
+  sprite.scale.set(1.75, 0.8, 1);
   sprite.renderOrder = 220;
   sprite.userData.canvas = canvas;
   sprite.userData.context = context;
@@ -553,36 +554,40 @@ const updatePurchaseLabel = (sprite: THREE.Sprite, paid: number, cost: number) =
   const canvas = sprite.userData.canvas as HTMLCanvasElement;
   const context = sprite.userData.context as CanvasRenderingContext2D;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(246, 224, 168, .97)';
-  context.roundRect(18, 18, 476, 284, 42);
+  const remaining = Math.max(0, cost - paid);
+  context.shadowColor = 'rgba(72, 51, 26, .2)';
+  context.shadowBlur = 12;
+  context.shadowOffsetY = 8;
+  context.fillStyle = 'rgba(255, 252, 229, .98)';
+  context.roundRect(16, 14, 352, 142, 38);
   context.fill();
-  context.lineWidth = 12;
-  context.strokeStyle = '#fff9df';
+  context.shadowColor = 'transparent';
+  context.lineWidth = 9;
+  context.strokeStyle = '#ffffff';
   context.stroke();
-  context.lineWidth = 5;
-  context.strokeStyle = '#8c552e';
+  context.lineWidth = 4;
+  context.strokeStyle = '#d6bd75';
   context.stroke();
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillStyle = '#5c3a24';
-  context.font = '900 43px system-ui';
-  context.fillText('KÜTÜK İSTASYONU', 256, 76);
-  context.fillStyle = '#fff4c9';
-  context.roundRect(106, 117, 300, 93, 30);
-  context.fill();
-  context.fillStyle = '#3d6936';
-  context.font = '1000 66px system-ui';
-  context.fillText(`${paid} / ${cost}`, 256, 165);
-  context.fillStyle = '#9a5f20';
+
+  // Pizza Ready benzeri kompakt fiyat etiketi: kalan tutar + para türü.
+  context.fillStyle = '#527b36';
+  context.font = '1000 78px system-ui';
+  context.fillText(String(remaining), 156, 85);
+
+  const coinX = 264;
+  const coinY = 85;
+  context.fillStyle = '#e9a92c';
   context.beginPath();
-  context.arc(196, 254, 23, 0, Math.PI * 2);
+  context.arc(coinX, coinY, 42, 0, Math.PI * 2);
   context.fill();
-  context.fillStyle = '#fff2a8';
-  context.font = '1000 30px system-ui';
-  context.fillText('G', 196, 254);
-  context.fillStyle = '#6f4829';
-  context.font = '900 35px system-ui';
-  context.fillText('GOLD', 282, 255);
+  context.lineWidth = 7;
+  context.strokeStyle = '#fff0a5';
+  context.stroke();
+  context.fillStyle = '#fff7c8';
+  context.font = '1000 49px system-ui';
+  context.fillText('G', coinX, coinY + 1);
   const material = sprite.material as THREE.SpriteMaterial;
   if (material.map) material.map.needsUpdate = true;
 };
@@ -687,7 +692,8 @@ const rebuildStationPiles = () => {
 const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, cost: number) => {
   const group = new THREE.Group();
   group.position.copy(position);
-  const padSize = 2.85;
+  const padSize = 2.35;
+  const progressWidth = padSize - 0.18;
   const pad = new THREE.Mesh(
     new THREE.PlaneGeometry(padSize, padSize),
     new THREE.MeshBasicMaterial({ color: 0xf6d873, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
@@ -697,11 +703,11 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   group.add(pad);
 
   const progressFill = new THREE.Mesh(
-    new THREE.PlaneGeometry(padSize - 0.18, padSize - 0.18),
+    new THREE.PlaneGeometry(progressWidth, progressWidth),
     new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
   progressFill.rotation.x = -Math.PI / 2;
-  progressFill.position.set(-(padSize - 0.18) / 2, 0.045, 0);
+  progressFill.position.set(-progressWidth / 2, 0.045, 0);
   progressFill.scale.x = 0.001;
   group.add(progressFill);
 
@@ -713,7 +719,8 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(-edge / 2, 0.075, 0), borderMaterial);
 
   const label = makePurchaseLabel(0, cost);
-  label.position.set(0, 1.62, -1.05);
+  // Zemine yakın fiyat etiketi; eski havada asılı tabela görünümünü engeller.
+  label.position.set(0, 0.52, 0.7);
   group.add(label);
   world.add(group);
   buildZones.push({
@@ -722,6 +729,7 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
     spawnPosition: position.clone().add(spawnOffset),
     label,
     progressFill,
+    progressWidth,
     cost,
     paid: 0,
     built: false,
@@ -745,7 +753,7 @@ const isClearForTree = (position: THREE.Vector3) => {
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.55);
 };
 
-for (let index = 0; index < 90; index += 1) {
+for (let index = 0; index < 68; index += 1) {
   let position = new THREE.Vector3();
   let attempts = 0;
   do {
@@ -1284,7 +1292,7 @@ const updateBuildZones = (delta: number) => {
         zone.paid += 1;
         const ratio = zone.paid / zone.cost;
         zone.progressFill.scale.x = Math.max(0.001, ratio);
-        zone.progressFill.position.x = -1.335 * (1 - ratio);
+        zone.progressFill.position.x = -(zone.progressWidth / 2) * (1 - ratio);
         updatePurchaseLabel(zone.label, zone.paid, zone.cost);
         bounceGroup(zone.group);
         updateUI();
@@ -1345,7 +1353,12 @@ const updateTweens = (delta: number) => {
 };
 
 const updateBillboards = () => {
-  for (const tree of trees) tree.healthBar.quaternion.copy(camera.quaternion);
+  for (const tree of trees) {
+    tree.healthBar.quaternion.copy(camera.quaternion);
+    // Tüm ormanı beyaz dairelerle kaplamak yerine yalnızca yakındaki
+    // kesilebilir ağaçların menzilini göster.
+    tree.rangeIndicator.visible = tree.alive && tree.group.position.distanceToSquared(player.position) < 6.25 * 6.25;
+  }
 };
 
 const occlusionRaycaster = new THREE.Raycaster();
