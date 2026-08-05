@@ -37,10 +37,13 @@ interface BuildZoneData {
   label: THREE.Mesh;
   progressFill: THREE.Mesh;
   progressWidth: number;
-  cost: number;
+  cost: ResourceCost;
   paid: number;
   built: boolean;
+  active: boolean;
   paymentClock: number;
+  onComplete: () => void;
+  completeMessage: string;
 }
 
 interface TavernData {
@@ -64,6 +67,7 @@ interface TavernData {
   serviceHalfX: number;
   serviceHalfZ: number;
   tables: TavernTable[];
+  tableBuildZones: BuildZoneData[];
   colliders: TavernCollider[];
 }
 
@@ -364,10 +368,14 @@ mainPath.position.y = 0.012;
 mainPath.receiveShadow = true;
 world.add(mainPath);
 
-// Ana yoldan tavernanın girişine uzanan müşteri yolu.
-const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 3.2), pathMaterial);
+// Doğu duvarı yolun batı sınırında kalır; bina artık yolun üzerine taşmaz.
+const tavernPosition = new THREE.Vector3(-11.45, 0, -2.2);
+const stationBuildPosition = new THREE.Vector3(5.6, 0, 5.2);
+
+// Kapı eşiğini ana yola bağlayan kısa giriş parçası.
+const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 3.2), pathMaterial);
 tavernPath.rotation.x = -Math.PI / 2;
-tavernPath.position.set(-2.35, 0.018, -2.2);
+tavernPath.position.set(-2.65, 0.018, -2.2);
 tavernPath.receiveShadow = true;
 world.add(tavernPath);
 
@@ -786,9 +794,17 @@ const rebuildStationPiles = () => {
   }
 };
 
-const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, cost: number) => {
+const createBuildZone = (
+  position: THREE.Vector3,
+  spawnOffset: THREE.Vector3,
+  cost: ResourceCost,
+  onComplete: () => void,
+  completeMessage: string,
+  active = true,
+) => {
   const group = new THREE.Group();
   group.position.copy(position);
+  group.visible = active;
   const padSize = 2.35;
   const progressWidth = padSize - 0.18;
   const pad = new THREE.Mesh(
@@ -815,12 +831,12 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(edge / 2, 0.075, 0), borderMaterial);
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(-edge / 2, 0.075, 0), borderMaterial);
 
-  const label = makePurchaseLabel(0, cost);
+  const label = makePurchaseLabel(0, cost.amount, cost.type);
   // Etiket bir UI sprite'ı değil; satın alma karesine basılmış yatay dünya işaretidir.
   label.position.set(0, 0.062, 0);
   group.add(label);
   world.add(group);
-  buildZones.push({
+  const zone: BuildZoneData = {
     group,
     position: position.clone(),
     spawnPosition: position.clone().add(spawnOffset),
@@ -830,8 +846,20 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
     cost,
     paid: 0,
     built: false,
+    active,
     paymentClock: 0,
-  });
+    onComplete,
+    completeMessage,
+  };
+  buildZones.push(zone);
+  return zone;
+};
+
+const activateBuildZone = (zone: BuildZoneData) => {
+  zone.active = true;
+  zone.group.visible = true;
+  zone.group.scale.setScalar(0.04);
+  addTween(0.5, (progress) => zone.group.scale.setScalar(easeOutBack(progress)), () => zone.group.scale.setScalar(1));
 };
 
 const createTavern = (position: THREE.Vector3) => {
@@ -878,41 +906,46 @@ const createTavern = (position: THREE.Vector3) => {
   addBox(entranceStage, new THREE.Vector3(0.4, 3.22, 0.32), new THREE.Vector3(7.9, 1.61, 1.12), darkTrunkMaterial);
   addBox(entranceStage, new THREE.Vector3(0.42, 0.32, 2.56), new THREE.Vector3(7.9, 3.16, 0), darkTrunkMaterial);
   // Ana servis tezgâhı aynı zamanda müşterilerin sıraya girdiği tek noktadır.
-  addBox(entranceStage, new THREE.Vector3(0.82, 1.02, 5.2), new THREE.Vector3(-4.6, 0.7, -3.35), counterMaterial);
-  addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-4.6, 1.27, -3.35), floorAccentMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.82, 1.02, 5.2), new THREE.Vector3(-2.8, 0.7, -3.35), counterMaterial);
+  addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-2.8, 1.27, -3.35), floorAccentMaterial);
   addBox(entranceStage, new THREE.Vector3(0.12, 0.82, 2.35), new THREE.Vector3(-7.65, 1.78, -3.35), plasterMaterial);
 
-  // Tezgâhın arkasındaki bütün şerit geçerli servis alanıdır ve zeminde okunur.
-  const serviceCenter = position.clone().add(new THREE.Vector3(-6.25, 0, -3.35));
-  const serviceHalfX = 1.2;
-  const serviceHalfZ = 2.35;
+  // Tezgâh geriye çekilmedi; tersine salon tarafına alındı ve arkasında geniş bir çalışma koridoru bırakıldı.
+  const serviceCenter = position.clone().add(new THREE.Vector3(-5.2, 0, -3.35));
+  const serviceHalfX = 1.9;
+  const serviceHalfZ = 2.65;
   const serviceMark = new THREE.Mesh(
     new THREE.PlaneGeometry(serviceHalfX * 2, serviceHalfZ * 2),
     new THREE.MeshBasicMaterial({ color: 0xf3df9a, transparent: true, opacity: 0.3, side: THREE.DoubleSide }),
   );
   serviceMark.rotation.x = -Math.PI / 2;
-  serviceMark.position.set(-6.25, 0.215, -3.35);
+  serviceMark.position.set(-5.2, 0.215, -3.35);
   entranceStage.add(serviceMark);
 
   const furnitureStage = new THREE.Group();
   const tables: TavernTable[] = [];
-  for (const [x, z] of [
-    [-2.0, -3.35], [1.15, -3.35], [4.3, -3.35],
-    [-2.0, 0], [1.15, 0], [4.3, 0],
-    [-2.0, 3.35], [1.15, 3.35], [4.3, 3.35],
-  ] as [number, number][]) {
+  const createTable = (x: number, z: number, visible: boolean) => {
     const tableGroup = new THREE.Group();
     tableGroup.position.set(x, 0, z);
+    tableGroup.visible = visible;
     addBox(tableGroup, new THREE.Vector3(1.45, 0.16, 0.9), new THREE.Vector3(0, 0.82, 0), counterMaterial);
     addBox(tableGroup, new THREE.Vector3(0.18, 0.76, 0.18), new THREE.Vector3(0, 0.4, 0), darkTrunkMaterial);
     addBox(tableGroup, new THREE.Vector3(0.72, 0.14, 0.64), new THREE.Vector3(0, 0.46, 0.92), floorAccentMaterial);
     addBox(tableGroup, new THREE.Vector3(0.14, 0.46, 0.14), new THREE.Vector3(0, 0.23, 0.92), darkTrunkMaterial);
     furnitureStage.add(tableGroup);
-    tables.push({ group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x, 0, z + 0.92)), occupied: false });
-  }
+    return { group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x, 0, z + 0.92)), occupied: false };
+  };
+
+  // Başlangıçta yalnızca bir masa işlevlidir. Diğerleri sırayla parayla kurulacaktır.
+  tables.push(createTable(1.2, 1.8, true));
+  const futureTables = [
+    createTable(4.2, 1.8, false),
+    createTable(1.2, 4.5, false),
+    createTable(4.2, 4.5, false),
+  ];
 
   // Fıçı, içecek alınan gerçek etkileşim noktasıdır.
-  const barrelPosition = position.clone().add(new THREE.Vector3(-6.25, 0, -0.35));
+  const barrelPosition = position.clone().add(new THREE.Vector3(-5.6, 0, -1.05));
   const barrel = new THREE.Group();
   barrel.position.copy(group.worldToLocal(barrelPosition.clone()));
   const barrelBody = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.25, 12), woodMaterial);
@@ -970,7 +1003,7 @@ const createTavern = (position: THREE.Vector3) => {
     { center: toWorld(-7.9, 0), halfX: 0.16, halfZ: 6.55, stage: 1 },
     { center: toWorld(7.9, -3.82), halfX: 0.16, halfZ: 2.68, stage: 1 },
     { center: toWorld(7.9, 3.82), halfX: 0.16, halfZ: 2.68, stage: 1 },
-    { center: toWorld(-4.6, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
+    { center: toWorld(-2.8, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
     { center: barrelPosition, halfX: 0.7, halfZ: 0.7, stage: 3 },
     ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 })),
     ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 })),
@@ -992,13 +1025,39 @@ const createTavern = (position: THREE.Vector3) => {
     barrelPosition,
     entrancePosition: toWorld(8.15, 0),
     exitPosition: toWorld(10.2, -7.8),
-    queueOrigin: toWorld(-3.5, -3.35),
+    queueOrigin: toWorld(-1.7, -3.35),
     serviceCenter,
     serviceHalfX,
     serviceHalfZ,
     tables,
+    tableBuildZones: [],
     colliders,
   };
+
+  const tableCosts = [8, 14, 22];
+  tavern.tableBuildZones = futureTables.map((table, index) => {
+    const tableWorldPosition = table.group.position.clone().add(position);
+    tableWorldPosition.y = 0.2;
+    return createBuildZone(
+      tableWorldPosition,
+      new THREE.Vector3(),
+      { type: 'money', amount: tableCosts[index] },
+      () => {
+        table.group.visible = true;
+        table.group.scale.setScalar(0.04);
+        addTween(0.58, (progress) => table.group.scale.setScalar(easeOutBack(progress)), () => table.group.scale.setScalar(1));
+        tavern.tables.push(table);
+        tavern.colliders.push(
+          { center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 },
+          { center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 },
+        );
+        const nextZone = tavern.tableBuildZones[index + 1];
+        if (nextZone) activateBuildZone(nextZone);
+      },
+      `Masa ${index + 2} kuruldu!`,
+      false,
+    );
+  });
 };
 
 const seededRandom = (() => {
@@ -1011,9 +1070,9 @@ const seededRandom = (() => {
 
 const isClearForTree = (position: THREE.Vector3) => {
   if (Math.abs(position.x + position.z * 0.13) < 3.8) return false;
-  if (position.distanceTo(new THREE.Vector3(0, 0, 5)) < 5.1) return false;
-  if (Math.abs(position.x + 8.2) < 9.1 && Math.abs(position.z + 2.2) < 7.8) return false;
-  if (Math.abs(position.z + 2.2) < 2.5 && position.x > -8 && position.x < 2) return false;
+  if (position.distanceTo(stationBuildPosition) < 4.2) return false;
+  if (Math.abs(position.x - tavernPosition.x) < 9.1 && Math.abs(position.z - tavernPosition.z) < 7.8) return false;
+  if (Math.abs(position.z - tavernPosition.z) < 2.5 && position.x > tavernPosition.x + 7.4 && position.x < 2) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.55);
 };
 
@@ -1043,16 +1102,22 @@ const createRock = (position: THREE.Vector3, scale: number) => {
 
 for (let index = 0; index < 28; index += 1) {
   const position = new THREE.Vector3((seededRandom() - 0.5) * 48, 0, (seededRandom() - 0.5) * 63);
-  const outsideTavern = !(Math.abs(position.x + 8.2) < 9.0 && Math.abs(position.z + 2.2) < 7.7);
-  const outsideTavernPath = !(Math.abs(position.z + 2.2) < 2.3 && position.x > -8 && position.x < 2);
-  if (Math.abs(position.x + position.z * 0.13) > 4 && outsideTavern && outsideTavernPath) {
+  const outsideTavern = !(Math.abs(position.x - tavernPosition.x) < 9.0 && Math.abs(position.z - tavernPosition.z) < 7.7);
+  const outsideTavernPath = !(Math.abs(position.z - tavernPosition.z) < 2.3 && position.x > tavernPosition.x + 7.4 && position.x < 2);
+  const outsideStation = position.distanceTo(stationBuildPosition) > 3.2;
+  if (Math.abs(position.x + position.z * 0.13) > 4 && outsideTavern && outsideTavernPath && outsideStation) {
     createRock(position, 0.25 + seededRandom() * 0.38);
   }
 }
 
-createTavern(new THREE.Vector3(-8.2, 0, -2.2));
-// Eski satın alma alanı kurucusu bu prototip aşamasında çağrılmıyor.
-void createBuildZone;
+createTavern(tavernPosition);
+createBuildZone(
+  stationBuildPosition,
+  new THREE.Vector3(),
+  { type: 'wood', amount: 3 },
+  () => createStation(stationBuildPosition, true),
+  'Kütük bırakma istasyonu kuruldu!',
+);
 
 const spawnParticles = (position: THREE.Vector3, color: number, count: number) => {
   for (let index = 0; index < count; index += 1) {
@@ -1139,6 +1204,18 @@ const animateMoneyToBuildZone = (zone: BuildZoneData) => {
   });
 };
 
+const animateWoodToBuildZone = (zone: BuildZoneData, start: THREE.Vector3) => {
+  const flyingLog = makeLogMesh(0.72);
+  const target = zone.position.clone().add(new THREE.Vector3(0, 0.18, 0));
+  flyingLog.position.copy(start);
+  scene.add(flyingLog);
+  addTween(0.42, (progress) => {
+    flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
+    flyingLog.position.y += Math.sin(progress * Math.PI) * 0.82;
+    flyingLog.rotation.y = progress * 0.28;
+  }, () => scene.remove(flyingLog));
+};
+
 const updateTreeHealthBar = (tree: TreeData) => {
   const fill = tree.healthBar.getObjectByName('fill');
   if (!fill) return;
@@ -1213,12 +1290,17 @@ const collectLog = (log: GroundLog) => {
   const stackIndex = state.carried + state.pendingCollection - 1;
   const start = log.mesh.position.clone();
   const startScale = log.mesh.scale.clone();
+  const startRotation = log.mesh.rotation.clone();
   addTween(0.48, (progress) => {
     const target = new THREE.Vector3(0, 0.34 + stackIndex * 0.235, 0.75);
     player.localToWorld(target);
-    log.mesh.position.lerpVectors(start, target, easeOutCubic(progress));
+    const eased = easeOutCubic(progress);
+    log.mesh.position.lerpVectors(start, target, eased);
     log.mesh.position.y += Math.sin(progress * Math.PI) * 1.05;
-    log.mesh.rotation.y += 0.18;
+    // Kütük sırta gelirken yalnızca küçük bir yön düzeltmesi yapar; kare başına dönmez.
+    log.mesh.rotation.x = THREE.MathUtils.lerp(startRotation.x, 0, eased);
+    log.mesh.rotation.y = startRotation.y + progress * 0.24;
+    log.mesh.rotation.z = THREE.MathUtils.lerp(startRotation.z, Math.PI / 2, eased);
     log.mesh.scale.copy(startScale).multiplyScalar(1 + Math.sin(progress * Math.PI) * 0.18);
   }, () => {
     scene.remove(log.mesh);
@@ -1291,6 +1373,8 @@ const updateTavernStages = () => {
 const finishTavern = () => {
   tavern.completed = true;
   tavern.group.remove(tavern.deliveryRing);
+  const firstTableZone = tavern.tableBuildZones[0];
+  if (firstTableZone) activateBuildZone(firstTableZone);
   customerSpawnClock = 3.2;
   audio.coin();
   showToast('Taverna açıldı! Fıçıdan içecek al ve sıraya servis et.');
@@ -1940,31 +2024,42 @@ const updateStations = (delta: number) => {
 
 const finishBuildZone = (zone: BuildZoneData) => {
   zone.built = true;
+  zone.active = false;
   world.remove(zone.group);
   spawnParticles(zone.spawnPosition, 0xf2d06b, 16);
-  createStation(zone.spawnPosition, true);
+  zone.onComplete();
   audio.coin();
-  showToast('Yeni odun istasyonu kuruldu!');
+  showToast(zone.completeMessage);
 };
 
 const updateBuildZones = (delta: number) => {
   for (const zone of buildZones) {
-    if (zone.built) continue;
+    if (zone.built || !zone.active) continue;
     const distance = zone.position.distanceTo(player.position);
-    if (distance < 1.45 && zone.paid < zone.cost && state.gold > 0) {
+    if (distance < 1.45 && zone.paid < zone.cost.amount && resourceAmount(zone.cost.type) > 0) {
       zone.paymentClock += delta;
       if (zone.paymentClock >= 0.32) {
         zone.paymentClock = 0;
-        state.gold -= 1;
+        if (zone.cost.type === 'money') {
+          state.gold -= 1;
+          animateMoneyToBuildZone(zone);
+        } else {
+          const topLog = stackMeshes[stackMeshes.length - 1];
+          if (!topLog) continue;
+          const start = new THREE.Vector3();
+          topLog.getWorldPosition(start);
+          state.carried -= 1;
+          rebuildPlayerStack();
+          animateWoodToBuildZone(zone, start);
+        }
         zone.paid += 1;
-        animateMoneyToBuildZone(zone);
-        const ratio = zone.paid / zone.cost;
+        const ratio = zone.paid / zone.cost.amount;
         zone.progressFill.scale.y = Math.max(0.001, ratio);
         zone.progressFill.position.z = (zone.progressWidth / 2) * (1 - ratio);
-        updatePurchaseLabel(zone.label, zone.paid, zone.cost);
+        updatePurchaseLabel(zone.label, zone.paid, zone.cost.amount, zone.cost.type);
         bounceGroup(zone.group);
         updateUI();
-        if (zone.paid >= zone.cost) finishBuildZone(zone);
+        if (zone.paid >= zone.cost.amount) finishBuildZone(zone);
       }
     } else {
       zone.paymentClock = 0;
@@ -1975,11 +2070,18 @@ const updateBuildZones = (delta: number) => {
 const updateContextHint = () => {
   let message = '';
   const nearTavernDelivery = !tavern.completed && tavern.deliveryPosition.distanceTo(player.position) < 2.2;
+  const nearbyBuildZone = buildZones.find((zone) => zone.active && !zone.built && zone.position.distanceTo(player.position) < 1.9);
   const nearbyGroundLog = groundLogs.some((log) => !log.collecting && log.mesh.position.distanceTo(player.position) < 1.6);
   if (nearTavernDelivery) {
     message = state.carried > 0
       ? `Taverna kuruluyor · ${tavern.paid}/${tavern.cost.amount} odun`
       : `Taverna için odun getir · ${tavern.paid}/${tavern.cost.amount}`;
+  } else if (nearbyBuildZone) {
+    const resourceName = nearbyBuildZone.cost.type === 'money' ? 'para' : 'odun';
+    const hasResource = resourceAmount(nearbyBuildZone.cost.type) > 0;
+    message = hasResource
+      ? `İnşa ediliyor · ${nearbyBuildZone.paid}/${nearbyBuildZone.cost.amount} ${resourceName}`
+      : `${nearbyBuildZone.cost.amount - nearbyBuildZone.paid} ${resourceName} gerekli`;
   } else if (tavern.completed && tavern.barrelPosition.distanceTo(player.position) < 1.8) {
     message = playerHasDrink ? 'Elinde bir içecek var · sıranın başına götür' : 'Fıçıdan içecek dolduruluyor';
   } else if (
