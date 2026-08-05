@@ -291,9 +291,9 @@ renderer.toneMappingExposure = 1.08;
 gameRoot.appendChild(renderer.domElement);
 
 const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
-// Yukarıdan fakat yandan çapraz olmayan görünüş: X ekseninde sapma yoktur,
-// bu yüzden yol ve bina kenarları ekranda düz kalırken nesnelerin yüksekliği okunur.
-const cameraOffset = new THREE.Vector3(0, 18, 14);
+// Yolun karşı tarafından kapıya doğru bakar. Kapı cephesi ekranda karşıdan
+// okunurken kamera yüksekliği mekânın içini görünür tutar.
+const cameraOffset = new THREE.Vector3(14, 18, 0);
 const cameraTarget = new THREE.Vector3();
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
@@ -367,12 +367,12 @@ mainPath.position.y = 0.012;
 mainPath.receiveShadow = true;
 world.add(mainPath);
 
-// Doğu duvarı yolun batı sınırında kalır; bina artık yolun üzerine taşmaz.
-const tavernPosition = new THREE.Vector3(-11.45, 0, -2.2);
+// Doğu duvarı yolun batı sınırının hemen gerisinde, tamamen yeşillikte kalır.
+const tavernPosition = new THREE.Vector3(-11.82, 0, -2.2);
 const stationBuildPosition = new THREE.Vector3(5.6, 0, 5.2);
 
 // Kapı eşiğini ana yola bağlayan kısa giriş parçası.
-const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 3.2), pathMaterial);
+const tavernPath = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.2), pathMaterial);
 tavernPath.rotation.x = -Math.PI / 2;
 tavernPath.position.set(-2.65, 0.018, -2.2);
 tavernPath.receiveShadow = true;
@@ -1815,8 +1815,9 @@ const getMovementInput = () => {
   return isPanelOpen() ? input.set(0, 0) : input;
 };
 
-const movementForward = new THREE.Vector3(0, 0, -1);
-const movementRight = new THREE.Vector3(1, 0, 0);
+// Kamera kapının karşısına döndüğü için ekran yukarısı batı, ekran sağı kuzeydir.
+const movementForward = new THREE.Vector3(-1, 0, 0);
+const movementRight = new THREE.Vector3(0, 0, -1);
 const desiredMovement = new THREE.Vector3();
 let playerRotation = 0;
 let walkTime = 0;
