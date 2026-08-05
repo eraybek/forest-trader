@@ -299,10 +299,10 @@ renderer.toneMappingExposure = 1.08;
 gameRoot.appendChild(renderer.domElement);
 
 const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
-// Kapının karşısından hafif güneydoğu çaprazına kaydırılmış, yaklaşık 54°
-// yükseltili ortografik açı. Açık oyuncak ev görünümünü korurken kapı cephesini
-// ve tavernanın iç düzenini aynı karede okunur tutar.
-const cameraOffset = new THREE.Vector3(14, 21, -6);
+// Referans arcade-idle oyunlarındaki yüksek, dengeli izometrik görünüm:
+// kapıya sağdan çapraz bakar, sahne sağdan sola okunur ve perspektif
+// bozulmadan zeminin iki ekseni de belirgin görünür.
+const cameraOffset = new THREE.Vector3(15, 28, -15);
 const cameraTarget = new THREE.Vector3();
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
@@ -901,6 +901,24 @@ const createTavern = (position: THREE.Vector3) => {
   const plasterMaterial = new THREE.MeshStandardMaterial({ color: 0xead6a8, roughness: 1 });
   const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x754529, roughness: 0.85 });
 
+  // Makine, üretim, bırakma ve ödeme noktaları aynı görsel dili kullanır:
+  // renkli sabit taban + ince beyaz çerçeve. Yalnızca renk işlevi anlatır.
+  const makeInteractionPad = (width: number, depth: number, color: number, opacity = 0.25) => {
+    const pad = new THREE.Group();
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(width, depth),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide }),
+    );
+    fill.rotation.x = -Math.PI / 2;
+    pad.add(fill);
+    const border = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.82 });
+    addBox(pad, new THREE.Vector3(width + 0.08, 0.055, 0.07), new THREE.Vector3(0, 0.035, depth / 2), border);
+    addBox(pad, new THREE.Vector3(width + 0.08, 0.055, 0.07), new THREE.Vector3(0, 0.035, -depth / 2), border);
+    addBox(pad, new THREE.Vector3(0.07, 0.055, depth + 0.08), new THREE.Vector3(width / 2, 0.035, 0), border);
+    addBox(pad, new THREE.Vector3(0.07, 0.055, depth + 0.08), new THREE.Vector3(-width / 2, 0.035, 0), border);
+    return pad;
+  };
+
   const floorStage = new THREE.Group();
   addBox(floorStage, new THREE.Vector3(15.8, 0.18, 13), new THREE.Vector3(0, 0.09, 0), floorMaterial);
   for (let plank = -6; plank <= 6; plank += 1) {
@@ -931,8 +949,8 @@ const createTavern = (position: THREE.Vector3) => {
   addBox(entranceStage, new THREE.Vector3(0.4, nearPostHeight, 0.32), new THREE.Vector3(7.9, nearPostHeight / 2, -1.12), darkTrunkMaterial);
   addBox(entranceStage, new THREE.Vector3(0.4, nearPostHeight, 0.32), new THREE.Vector3(7.9, nearPostHeight / 2, 1.12), darkTrunkMaterial);
   // Ana servis tezgâhı aynı zamanda müşterilerin sıraya girdiği tek noktadır.
-  addBox(entranceStage, new THREE.Vector3(0.82, 1.02, 5.2), new THREE.Vector3(-2.8, 0.7, -3.35), counterMaterial);
-  addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-2.8, 1.27, -3.35), floorAccentMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.82, 1.02, 5.2), new THREE.Vector3(-1.8, 0.7, -3.35), counterMaterial);
+  addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-1.8, 1.27, -3.35), floorAccentMaterial);
   addBox(entranceStage, new THREE.Vector3(0.12, 0.82, 2.35), new THREE.Vector3(-7.65, 1.78, -3.35), plasterMaterial);
 
   const furnitureStage = new THREE.Group();
@@ -957,8 +975,12 @@ const createTavern = (position: THREE.Vector3) => {
     createTable(4.2, 4.5, false),
   ];
 
-  // İlk fıçı servis tezgâhının arkasında gerçek üretim kaynağıdır.
-  const barrelPosition = position.clone().add(new THREE.Vector3(-5.6, 0, -1.05));
+  // İlk fıçı, oyuncunun içeceği gerçekten taşımasını gerektirecek kadar
+  // tezgâhtan uzakta, tavernanın sol üst köşesindedir.
+  const barrelPosition = position.clone().add(new THREE.Vector3(-6.35, 0, 3.55));
+  const barrelBase = makeInteractionPad(1.3, 1.3, 0xe59a45, 0.34);
+  barrelBase.position.set(-6.35, 0.205, 3.55);
+  furnitureStage.add(barrelBase);
   const barrel = new THREE.Group();
   barrel.position.copy(group.worldToLocal(barrelPosition.clone()));
   const barrelBody = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.25, 12), woodMaterial);
@@ -975,71 +997,37 @@ const createTavern = (position: THREE.Vector3) => {
   tap.rotation.x = -0.15;
   furnitureStage.add(barrel);
 
-  // Fıçının önündeki mavi alan üretilen içeceklerin en fazla 10 adet
-  // biriktiği toplama noktasıdır.
-  const drinkPickupPosition = position.clone().add(new THREE.Vector3(-4.65, 0, -1.05));
-  const productionRing = new THREE.Group();
-  productionRing.position.set(-4.65, 0.035, -1.05);
-  const productionFill = new THREE.Mesh(
-    new THREE.CircleGeometry(1.02, 32),
-    new THREE.MeshBasicMaterial({ color: 0x55b9d2, transparent: true, opacity: 0.24, side: THREE.DoubleSide }),
-  );
-  const productionEdge = new THREE.Mesh(
-    new THREE.RingGeometry(0.93, 1.05, 32),
-    new THREE.MeshBasicMaterial({ color: 0xe8fbff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
-  );
-  productionFill.rotation.x = -Math.PI / 2;
-  productionEdge.rotation.x = -Math.PI / 2;
-  productionEdge.position.y = 0.01;
-  productionRing.add(productionFill, productionEdge);
+  // Fıçının önündeki mavi alan üretilen en fazla 10 içeceğin iki yatay sıra
+  // hâlinde biriktiği toplama noktasıdır.
+  const drinkPickupPosition = position.clone().add(new THREE.Vector3(-4.8, 0, 3.55));
+  const productionRing = makeInteractionPad(1.65, 0.92, 0x55b9d2);
+  productionRing.position.set(-4.8, 0.205, 3.55);
   furnitureStage.add(productionRing);
 
   const drinkProductionPile = new THREE.Group();
-  drinkProductionPile.position.set(-4.65, 0.08, -1.05);
+  drinkProductionPile.position.set(-4.8, 0.22, 3.55);
   furnitureStage.add(drinkProductionPile);
 
   // Tezgâhın arkasındaki uzun şerit oyuncunun taşıdığı içecekleri bıraktığı
   // alandır. Müşteriler yalnızca tezgâhın üzerindeki bu stoktan servis alır.
-  const drinkDropPosition = position.clone().add(new THREE.Vector3(-4.0, 0, -3.55));
-  const dropZone = new THREE.Group();
-  dropZone.position.set(-4.0, 0.035, -3.55);
-  const dropFill = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.25, 4.45),
-    new THREE.MeshBasicMaterial({ color: 0x75c873, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
-  );
-  dropFill.rotation.x = -Math.PI / 2;
-  dropZone.add(dropFill);
-  const dropBorderMaterial = new THREE.MeshBasicMaterial({ color: 0xf4fff0, transparent: true, opacity: 0.78 });
-  addBox(dropZone, new THREE.Vector3(1.35, 0.06, 0.08), new THREE.Vector3(0, 0.04, 2.25), dropBorderMaterial);
-  addBox(dropZone, new THREE.Vector3(1.35, 0.06, 0.08), new THREE.Vector3(0, 0.04, -2.25), dropBorderMaterial);
-  addBox(dropZone, new THREE.Vector3(0.08, 0.06, 4.58), new THREE.Vector3(0.675, 0.04, 0), dropBorderMaterial);
-  addBox(dropZone, new THREE.Vector3(0.08, 0.06, 4.58), new THREE.Vector3(-0.675, 0.04, 0), dropBorderMaterial);
+  const drinkDropPosition = position.clone().add(new THREE.Vector3(-3.45, 0, -3.35));
+  const dropZone = makeInteractionPad(1.65, 1.65, 0x75c873);
+  dropZone.position.set(-3.45, 0.205, -3.55);
+  dropZone.position.z = -3.35;
   furnitureStage.add(dropZone);
 
   const counterDrinkPile = new THREE.Group();
-  counterDrinkPile.position.set(-2.8, 1.39, -3.35);
+  counterDrinkPile.position.set(-1.8, 1.39, -3.35);
   furnitureStage.add(counterDrinkPile);
 
   // Müşterilerin ödemeleri tezgâhın yanında ayrı bir istifte birikir.
-  const paymentPosition = position.clone().add(new THREE.Vector3(-2.8, 0, -0.25));
-  const paymentArea = new THREE.Group();
-  paymentArea.position.set(-2.8, 0.035, -0.25);
-  const paymentFill = new THREE.Mesh(
-    new THREE.CircleGeometry(0.78, 30),
-    new THREE.MeshBasicMaterial({ color: 0x31c96a, transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
-  );
-  const paymentEdge = new THREE.Mesh(
-    new THREE.RingGeometry(0.7, 0.8, 30),
-    new THREE.MeshBasicMaterial({ color: 0xe9fff0, transparent: true, opacity: 0.82, side: THREE.DoubleSide }),
-  );
-  paymentFill.rotation.x = -Math.PI / 2;
-  paymentEdge.rotation.x = -Math.PI / 2;
-  paymentEdge.position.y = 0.01;
-  paymentArea.add(paymentFill, paymentEdge);
+  const paymentPosition = position.clone().add(new THREE.Vector3(-1.8, 0, 0.25));
+  const paymentArea = makeInteractionPad(1.55, 1.55, 0x31c96a);
+  paymentArea.position.set(-1.8, 0.205, 0.25);
   furnitureStage.add(paymentArea);
 
   const paymentPile = new THREE.Group();
-  paymentPile.position.set(-2.8, 0.08, -0.25);
+  paymentPile.position.set(-1.8, 0.23, 0.25);
   furnitureStage.add(paymentPile);
 
   const stages = [floorStage, wallStage, entranceStage, furnitureStage];
@@ -1049,7 +1037,7 @@ const createTavern = (position: THREE.Vector3) => {
   }
 
   // Oyuncuya boş bina sınırı göstermiyoruz. Tek başlangıç hedefi, kapının
-  // karşısında ve doğrudan ana yolun üzerinde duran 12 odun teslim noktasıdır.
+  // karşısında ve doğrudan ana yolun üzerinde duran 3 odun teslim noktasıdır.
   const deliveryPosition = position.clone().add(new THREE.Vector3(9.45, 0, 0));
   const deliveryRing = new THREE.Group();
   deliveryRing.position.copy(group.worldToLocal(deliveryPosition.clone()));
@@ -1068,7 +1056,7 @@ const createTavern = (position: THREE.Vector3) => {
   deliveryRing.add(ringFill, ringEdge);
   group.add(deliveryRing);
 
-  const label = makePurchaseLabel(0, 12, 'wood');
+  const label = makePurchaseLabel(0, 3, 'wood');
   label.position.set(0, 0.062, 0);
   deliveryRing.add(label);
 
@@ -1085,7 +1073,7 @@ const createTavern = (position: THREE.Vector3) => {
     { center: toWorld(-7.9, 0), halfX: 0.16, halfZ: 6.55, stage: 1 },
     { center: toWorld(7.9, -3.82), halfX: 0.16, halfZ: 2.68, stage: 1 },
     { center: toWorld(7.9, 3.82), halfX: 0.16, halfZ: 2.68, stage: 1 },
-    { center: toWorld(-2.8, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
+    { center: toWorld(-1.8, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
     { center: barrelPosition, halfX: 0.7, halfZ: 0.7, stage: 3 },
     ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 })),
     ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 })),
@@ -1099,7 +1087,7 @@ const createTavern = (position: THREE.Vector3) => {
     pile,
     stages,
     label,
-    cost: { type: 'wood', amount: 12 },
+    cost: { type: 'wood', amount: 3 },
     paid: 0,
     completed: false,
     deliveryClock: 0,
@@ -1113,7 +1101,7 @@ const createTavern = (position: THREE.Vector3) => {
     paymentPile,
     entrancePosition: toWorld(8.15, 0),
     exitPosition: toWorld(10.2, -7.8),
-    queueOrigin: toWorld(-1.7, -3.35),
+    queueOrigin: toWorld(-0.7, -3.35),
     tables,
     tableBuildZones: [],
     colliders,
@@ -1451,7 +1439,7 @@ const revealTavernStage = (stageIndex: number) => {
 };
 
 const updateTavernStages = () => {
-  const thresholds = [3, 6, 9, 12];
+  const thresholds = [1, 2, 3, 3];
   thresholds.forEach((threshold, index) => {
     if (tavern.paid >= threshold) revealTavernStage(index);
   });
@@ -1572,50 +1560,75 @@ const rebuildTavernResourcePiles = () => {
   for (let index = 0; index < state.barrelDrinks; index += 1) {
     const mug = makeDrinkMug();
     const column = index % 5;
-    const layer = Math.floor(index / 5);
-    mug.position.set((column - 2) * 0.25, 0.13 + layer * 0.27, 0);
+    const row = Math.floor(index / 5);
+    mug.position.set((column - 2) * 0.27, 0.13, (row - 0.5) * 0.34);
     tavern.drinkProductionPile.add(mug);
   }
 
-  // Tezgâh stoğunda sınır yoktur; içecekler tezgâh boyunca sekizli
-  // sıralar hâlinde yukarı doğru düzenli biçimde dizilir.
+  // Tezgâh stoğunda sınır yoktur; içecekler kompakt 3x3 taban üzerinde
+  // dokuzlu katmanlar hâlinde yukarı doğru yükselir.
   tavern.counterDrinkPile.clear();
   for (let index = 0; index < state.counterDrinks; index += 1) {
     const mug = makeDrinkMug();
-    const column = index % 8;
-    const layer = Math.floor(index / 8);
-    mug.position.set(0, layer * 0.27, -1.96 + column * 0.56);
+    const slot = index % 9;
+    const column = slot % 3;
+    const row = Math.floor(slot / 3);
+    const layer = Math.floor(index / 9);
+    mug.position.set((column - 1) * 0.27, layer * 0.27, (row - 1) * 0.31);
     tavern.counterDrinkPile.add(mug);
   }
 
+  // Para da alanı genişletmeden aynı 3x3 tabanda üst üste birikir.
   tavern.paymentPile.clear();
   const noteCount = Math.floor(state.pendingGold / 4);
   for (let index = 0; index < noteCount; index += 1) {
     const note = makeBanknoteMesh();
-    const column = index % 4;
-    const layer = Math.floor(index / 4);
-    note.position.set((column - 1.5) * 0.16, layer * 0.052, ((index + layer) % 2) * 0.06 - 0.03);
-    note.rotation.y = (column - 1.5) * 0.07;
+    const slot = index % 9;
+    const column = slot % 3;
+    const row = Math.floor(slot / 3);
+    const layer = Math.floor(index / 9);
+    note.position.set((column - 1) * 0.24, layer * 0.065, (row - 1) * 0.17);
+    note.rotation.y = (column - 1) * 0.06 + (row - 1) * 0.025;
     tavern.paymentPile.add(note);
   }
 };
 
 const counterDrinkWorldTarget = (index: number) => {
-  const column = index % 8;
-  const layer = Math.floor(index / 8);
+  const slot = index % 9;
+  const column = slot % 3;
+  const row = Math.floor(slot / 3);
+  const layer = Math.floor(index / 9);
   tavern.counterDrinkPile.updateWorldMatrix(true, false);
-  return tavern.counterDrinkPile.localToWorld(new THREE.Vector3(0, layer * 0.27 + 0.13, -1.96 + column * 0.56));
+  return tavern.counterDrinkPile.localToWorld(new THREE.Vector3(
+    (column - 1) * 0.27,
+    layer * 0.27 + 0.13,
+    (row - 1) * 0.31,
+  ));
+};
+
+const paymentWorldTarget = (index: number) => {
+  const slot = index % 9;
+  const column = slot % 3;
+  const row = Math.floor(slot / 3);
+  const layer = Math.floor(index / 9);
+  tavern.paymentPile.updateWorldMatrix(true, false);
+  return tavern.paymentPile.localToWorld(new THREE.Vector3(
+    (column - 1) * 0.24,
+    layer * 0.065 + 0.04,
+    (row - 1) * 0.17,
+  ));
 };
 
 const dropCustomerPayment = (position: THREE.Vector3, value: number) => {
   const noteCount = Math.max(1, Math.floor(value / 4));
+  const existingNoteCount = Math.floor(state.pendingGold / 4);
   for (let index = 0; index < noteCount; index += 1) {
     const banknote = makeBanknoteMesh();
     const start = position.clone().add(new THREE.Vector3(0, 1.05 + index * 0.04, 0));
-    const target = tavern.paymentPosition.clone().add(new THREE.Vector3((index - (noteCount - 1) / 2) * 0.13, 0.12, 0));
+    const target = paymentWorldTarget(existingNoteCount + index);
     banknote.position.copy(start);
     scene.add(banknote);
-    addTween(0.42 + index * 0.045, (progress) => {
+    addTween(0.26 + index * 0.025, (progress) => {
       banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
       banknote.position.y += Math.sin(progress * Math.PI) * 0.8;
       banknote.rotation.y += 0.28;
@@ -1657,7 +1670,7 @@ const collectProducedDrink = () => {
   flyingMug.position.copy(start);
   scene.add(flyingMug);
   const stackIndex = state.carriedDrinks + state.pendingDrinkCollection - 1;
-  addTween(0.36, (progress) => {
+  addTween(0.22, (progress) => {
     const target = new THREE.Vector3(0, 0.47 + stackIndex * 0.235, 0.75);
     player.localToWorld(target);
     flyingMug.position.lerpVectors(start, target, easeOutCubic(progress));
@@ -1689,7 +1702,7 @@ const deliverDrinkToCounter = () => {
   flyingMug.position.copy(start);
   scene.add(flyingMug);
   const target = counterDrinkWorldTarget(state.counterDrinks);
-  addTween(0.32, (progress) => {
+  addTween(0.2, (progress) => {
     flyingMug.position.lerpVectors(start, target, easeInOutCubic(progress));
     flyingMug.position.y += Math.sin(progress * Math.PI) * 0.72;
     flyingMug.rotation.y += 0.22;
@@ -1716,7 +1729,7 @@ const collectPayment = () => {
   banknote.position.copy(start);
   scene.add(banknote);
   const target = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-  addTween(0.3, (progress) => {
+  addTween(0.18, (progress) => {
     banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
     banknote.position.y += Math.sin(progress * Math.PI) * 0.62;
     banknote.rotation.y += 0.28;
@@ -1751,7 +1764,7 @@ const updateTavernOperations = (delta: number) => {
     && state.barrelDrinks > 0
   ) {
     drinkPickupClock += delta;
-    if (drinkPickupClock >= 0.14 && !drinkCollecting) {
+    if (drinkPickupClock >= 0.08 && !drinkCollecting) {
       drinkPickupClock = 0;
       collectProducedDrink();
     }
@@ -1762,7 +1775,7 @@ const updateTavernOperations = (delta: number) => {
   const nearCounterDrop = tavern.drinkDropPosition.distanceTo(player.position) < 1.42;
   if (nearCounterDrop && state.carriedDrinks > 0) {
     drinkDropClock += delta;
-    if (drinkDropClock >= 0.14 && !drinkDelivering) {
+    if (drinkDropClock >= 0.08 && !drinkDelivering) {
       drinkDropClock = 0;
       deliverDrinkToCounter();
     }
