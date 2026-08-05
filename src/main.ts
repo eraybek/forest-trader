@@ -896,7 +896,7 @@ const unloadOneLog = (station: StationData) => {
   const target = station.position.clone().add(new THREE.Vector3(
     ((state.stock % 4) - 1.5) * 0.46,
     0.42 + Math.floor((state.stock % 16) / 4) * 0.24,
-    -0.2,
+    0.45,
   ));
   addTween(0.34, (progress) => {
     flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
