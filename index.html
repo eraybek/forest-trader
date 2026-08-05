@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#3e7b3b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Forest Trader</title>
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div class="top-hud" aria-label="Kaynaklar">
+      <div class="resource-pill"><span class="coin-icon">●</span><strong id="gold-count">0</strong></div>
+      <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
+    </div>
+
+    <div class="side-actions">
+      <button id="offers-button" class="square-button" aria-label="Teklifler">
+        <span>↔</span><small>Teklif</small><b id="offer-badge" class="badge">1</b>
+      </button>
+      <button id="upgrades-button" class="square-button" aria-label="Geliştirmeler">
+        <span>↑</span><small>Geliştir</small>
+      </button>
+    </div>
+
+    <div id="action-hint" class="action-hint hidden"></div>
+
+    <div id="joystick" class="joystick" aria-label="Hareket kontrolü">
+      <div id="joystick-knob" class="joystick-knob"></div>
+    </div>
+
+    <div id="panel-backdrop" class="panel-backdrop hidden"></div>
+
+    <section id="offer-panel" class="game-panel hidden" aria-label="Teklif paneli">
+      <header><div><span class="eyebrow">SÜRELİ TEKLİF</span><h2>Odun siparişi</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <div class="offer-trade">
+        <div><span class="big-log">▰</span><strong id="offer-wood">8</strong><small>odun</small></div>
+        <span class="trade-arrow">→</span>
+        <div><span class="big-coin">●</span><strong id="offer-gold">20</strong><small>gold</small></div>
+      </div>
+      <div class="timer-row"><span>Kalan süre</span><strong id="offer-time">00:45</strong></div>
+      <button id="sell-button" class="primary-button">Stoğu sat</button>
+      <p id="offer-status" class="panel-note">İstasyon stoğu: 0 / 8</p>
+    </section>
+
+    <section id="upgrade-panel" class="game-panel hidden" aria-label="Geliştirme paneli">
+      <header><div><span class="eyebrow">GELİŞTİRMELER</span><h2>Daha hızlı büyü</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <div class="upgrade-list">
+        <button class="upgrade-card" data-upgrade="capacity"><span class="upgrade-symbol">▰</span><span><strong>Taşıma kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b id="capacity-cost">15 ●</b></button>
+        <button class="upgrade-card" data-upgrade="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b id="damage-cost">25 ●</b></button>
+        <button class="upgrade-card" data-upgrade="speed"><span class="upgrade-symbol">»</span><span><strong>Hareket hızı</strong><small id="speed-value">100% → 112%</small></span><b id="speed-cost">20 ●</b></button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
