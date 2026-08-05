@@ -414,7 +414,7 @@ hair.castShadow = true;
 playerVisual.add(hair);
 
 const axePivot = new THREE.Group();
-axePivot.position.set(-0.57, 0.94, -0.12);
+axePivot.position.set(-0.57, 1.04, -0.12);
 playerVisual.add(axePivot);
 const axeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.74, 6), trunkMaterial);
 axeHandle.position.y = -0.23;
@@ -425,7 +425,10 @@ axeHead.position.set(0.12, 0.13, 0);
 axeHead.rotation.z = -0.24;
 axeHead.castShadow = true;
 axePivot.add(axeHead);
-axePivot.rotation.z = 0.22;
+const axeRestAngle = 0.32;
+const axeWindupAngle = 1.52;
+const axeStrikeAngle = -1.48;
+axePivot.rotation.z = axeRestAngle;
 
 const toolArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.34, 4, 7), skinMaterial);
 toolArm.position.set(-0.39, 1.04, -0.1);
@@ -621,12 +624,12 @@ const createStation = (position: THREE.Vector3, animate = false) => {
 const rebuildStationPiles = () => {
   for (const station of stations) {
     station.pile.clear();
-    const visibleLogs = Math.min(state.stock, 16);
-    for (let index = 0; index < visibleLogs; index += 1) {
+    for (let index = 0; index < state.stock; index += 1) {
       const log = makeLogMesh(0.78);
       const column = index % 4;
       const row = Math.floor(index / 4);
-      log.position.set(-0.85 + column * 0.56, 0.22 + row * 0.28, 0);
+      log.position.set(-1.02 + column * 0.68, 0.22 + row * 0.34, 0);
+      log.rotation.x = row % 2 === 0 ? 0.018 : -0.018;
       station.pile.add(log);
     }
   }
@@ -650,8 +653,8 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
     new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
   progressFill.rotation.x = -Math.PI / 2;
-  progressFill.position.set(-progressWidth / 2, 0.045, 0);
-  progressFill.scale.x = 0.001;
+  progressFill.position.set(0, 0.045, progressWidth / 2);
+  progressFill.scale.y = 0.001;
   group.add(progressFill);
 
   const borderMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.94 });
@@ -751,6 +754,70 @@ const spawnParticles = (position: THREE.Vector3, color: number, count: number) =
   }
 };
 
+const spawnChopDebris = (treePosition: THREE.Vector3) => {
+  const burstOrigin = treePosition.clone().add(new THREE.Vector3(0, 1.35, 0));
+  for (let index = 0; index < 10; index += 1) {
+    const isTwig = index < 3;
+    const material = new THREE.MeshBasicMaterial({
+      color: isTwig ? 0x8b542f : (index % 2 === 0 ? 0x78b94e : 0x9bca5b),
+      transparent: true,
+      side: THREE.DoubleSide,
+    });
+    const debris = new THREE.Mesh(
+      isTwig
+        ? new THREE.BoxGeometry(0.055, 0.3, 0.055)
+        : new THREE.PlaneGeometry(0.16, 0.1),
+      material,
+    );
+    const start = burstOrigin.clone().add(new THREE.Vector3(
+      (seededRandom() - 0.5) * 0.42,
+      seededRandom() * 0.5,
+      (seededRandom() - 0.5) * 0.42,
+    ));
+    const velocity = new THREE.Vector3(
+      (seededRandom() - 0.5) * 2.7,
+      0.8 + seededRandom() * 1.5,
+      (seededRandom() - 0.5) * 2.7,
+    );
+    debris.position.copy(start);
+    debris.rotation.set(seededRandom() * Math.PI, seededRandom() * Math.PI, seededRandom() * Math.PI);
+    scene.add(debris);
+    addTween(0.72 + seededRandom() * 0.18, (progress) => {
+      debris.position.copy(start).addScaledVector(velocity, progress);
+      debris.position.y -= 2.35 * progress * progress;
+      debris.rotation.x += isTwig ? 0.18 : 0.34;
+      debris.rotation.z += isTwig ? 0.12 : 0.28;
+      material.opacity = Math.min(1, (1 - progress) * 1.7);
+    }, () => {
+      scene.remove(debris);
+      debris.geometry.dispose();
+      material.dispose();
+    });
+  }
+};
+
+const animateMoneyToBuildZone = (zone: BuildZoneData) => {
+  const moneyMaterial = new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.72 });
+  const banknote = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.045, 0.19), moneyMaterial);
+  const start = player.position.clone().add(new THREE.Vector3(0, 1.15, 0));
+  const target = zone.position.clone().add(new THREE.Vector3(0, 0.13, 0));
+  banknote.position.copy(start);
+  banknote.rotation.set(0.12, player.rotation.y, 0.08);
+  scene.add(banknote);
+  addTween(0.42, (progress) => {
+    banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
+    banknote.position.y += Math.sin(progress * Math.PI) * 0.9;
+    banknote.rotation.y += 0.26;
+    banknote.rotation.z = Math.sin(progress * Math.PI * 2) * 0.18;
+    const scale = 1 + Math.sin(progress * Math.PI) * 0.24;
+    banknote.scale.setScalar(scale);
+  }, () => {
+    scene.remove(banknote);
+    banknote.geometry.dispose();
+    moneyMaterial.dispose();
+  });
+};
+
 const updateTreeHealthBar = (tree: TreeData) => {
   const fill = tree.healthBar.getObjectByName('fill');
   if (!fill) return;
@@ -821,6 +888,7 @@ const hitTree = (tree: TreeData) => {
   tree.hp = Math.max(0, tree.hp - state.damage);
   updateTreeHealthBar(tree);
   spawnParticles(tree.group.position, 0xc99248, 5);
+  spawnChopDebris(tree.group.position);
   const startingRotation = tree.group.rotation.z;
   addTween(0.22, (progress) => {
     tree.group.rotation.z = startingRotation + Math.sin(progress * Math.PI) * 0.085;
@@ -875,8 +943,8 @@ const unloadOneLog = (station: StationData) => {
   flyingLog.position.copy(start);
   scene.add(flyingLog);
   const target = station.position.clone().add(new THREE.Vector3(
-    ((state.stock % 4) - 1.5) * 0.46,
-    0.42 + Math.floor((state.stock % 16) / 4) * 0.24,
+    -1.02 + (state.stock % 4) * 0.68,
+    0.42 + Math.floor(state.stock / 4) * 0.34,
     0.45,
   ));
   addTween(0.34, (progress) => {
@@ -1140,35 +1208,38 @@ const updatePlayer = (delta: number) => {
     playerVisual.position.y = Math.abs(Math.sin(walkTime)) * 0.055;
     legs[0].rotation.x = Math.sin(walkTime) * 0.35;
     legs[1].rotation.x = -Math.sin(walkTime) * 0.35;
-    chopClock = 0;
-    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
   } else {
     playerVisual.position.y = THREE.MathUtils.lerp(playerVisual.position.y, 0, delta * 10);
     legs[0].rotation.x = THREE.MathUtils.lerp(legs[0].rotation.x, 0, delta * 10);
     legs[1].rotation.x = THREE.MathUtils.lerp(legs[1].rotation.x, 0, delta * 10);
-    const nearest = nearestTreeInRange();
-    if (nearest) {
+  }
+
+  const nearest = nearestTreeInRange();
+  if (nearest) {
+    if (!isMoving) {
       const direction = nearest.group.position.clone().sub(player.position);
       const targetRotation = Math.atan2(-direction.x, -direction.z);
       let difference = targetRotation - playerRotation;
       difference = Math.atan2(Math.sin(difference), Math.cos(difference));
       playerRotation += difference * Math.min(1, delta * 12);
       player.rotation.y = playerRotation;
-      chopClock += delta;
-      const chopRatio = Math.min(1, chopClock / chopDuration);
-      if (chopRatio < 0.65) {
-        axePivot.rotation.z = THREE.MathUtils.lerp(0.22, 0.98, easeInOutCubic(chopRatio / 0.65));
-      } else {
-        axePivot.rotation.z = THREE.MathUtils.lerp(0.98, -1.22, easeInOutCubic((chopRatio - 0.65) / 0.35));
-      }
-      if (chopClock >= chopDuration) {
-        chopClock -= chopDuration;
-        hitTree(nearest);
-      }
-    } else {
-      chopClock = 0;
-      axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
     }
+    chopClock += delta;
+    const chopRatio = Math.min(1, chopClock / chopDuration);
+    if (chopRatio < 0.56) {
+      axePivot.rotation.z = THREE.MathUtils.lerp(axeRestAngle, axeWindupAngle, easeInOutCubic(chopRatio / 0.56));
+    } else {
+      axePivot.rotation.z = THREE.MathUtils.lerp(axeWindupAngle, axeStrikeAngle, easeInOutCubic((chopRatio - 0.56) / 0.44));
+    }
+    toolArm.rotation.z = -0.38 + (axePivot.rotation.z - axeRestAngle) * 0.18;
+    if (chopClock >= chopDuration) {
+      chopClock -= chopDuration;
+      hitTree(nearest);
+    }
+  } else {
+    chopClock = 0;
+    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, axeRestAngle, delta * 12);
+    toolArm.rotation.z = THREE.MathUtils.lerp(toolArm.rotation.z, -0.38, delta * 12);
   }
 
   const stackSway = isMoving ? -0.1 : 0.025;
@@ -1226,9 +1297,10 @@ const updateBuildZones = (delta: number) => {
         zone.paymentClock = 0;
         state.gold -= 1;
         zone.paid += 1;
+        animateMoneyToBuildZone(zone);
         const ratio = zone.paid / zone.cost;
-        zone.progressFill.scale.x = Math.max(0.001, ratio);
-        zone.progressFill.position.x = -(zone.progressWidth / 2) * (1 - ratio);
+        zone.progressFill.scale.y = Math.max(0.001, ratio);
+        zone.progressFill.position.z = (zone.progressWidth / 2) * (1 - ratio);
         updatePurchaseLabel(zone.label, zone.paid, zone.cost);
         bounceGroup(zone.group);
         updateUI();
