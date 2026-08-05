@@ -74,6 +74,141 @@ const actionHint = getElement<HTMLElement>('action-hint');
 const toast = getElement<HTMLElement>('toast');
 const joystick = getElement<HTMLElement>('joystick');
 const joystickKnob = getElement<HTMLElement>('joystick-knob');
+const mainMenu = getElement<HTMLElement>('main-menu');
+const playButton = getElement<HTMLButtonElement>('play-button');
+const settingsButton = getElement<HTMLButtonElement>('settings-button');
+const settingsPanel = getElement<HTMLElement>('settings-panel');
+const settingsBackdrop = getElement<HTMLElement>('settings-backdrop');
+const settingsClose = getElement<HTMLButtonElement>('settings-close');
+const musicVolume = getElement<HTMLInputElement>('music-volume');
+const sfxVolume = getElement<HTMLInputElement>('sfx-volume');
+const musicVolumeValue = getElement<HTMLOutputElement>('music-volume-value');
+const sfxVolumeValue = getElement<HTMLOutputElement>('sfx-volume-value');
+
+document.body.classList.add('menu-active');
+let gameStarted = false;
+let settingsOpen = false;
+
+class AudioEngine {
+  private context: AudioContext | null = null;
+  private musicGain: GainNode | null = null;
+  private sfxGain: GainNode | null = null;
+  private musicTimer: number | null = null;
+  private musicStep = 0;
+  musicLevel = Number(localStorage.getItem('forest-trader-music') ?? 55) / 100;
+  sfxLevel = Number(localStorage.getItem('forest-trader-sfx') ?? 80) / 100;
+
+  async unlock() {
+    if (!this.context) {
+      this.context = new AudioContext();
+      this.musicGain = this.context.createGain();
+      this.sfxGain = this.context.createGain();
+      this.musicGain.connect(this.context.destination);
+      this.sfxGain.connect(this.context.destination);
+      this.applyLevels();
+    }
+    if (this.context.state === 'suspended') await this.context.resume();
+  }
+
+  setMusic(value: number) {
+    this.musicLevel = value;
+    localStorage.setItem('forest-trader-music', `${Math.round(value * 100)}`);
+    this.applyLevels();
+  }
+
+  setSfx(value: number) {
+    this.sfxLevel = value;
+    localStorage.setItem('forest-trader-sfx', `${Math.round(value * 100)}`);
+    this.applyLevels();
+  }
+
+  private applyLevels() {
+    if (!this.context) return;
+    this.musicGain?.gain.setTargetAtTime(this.musicLevel * 0.16, this.context.currentTime, 0.04);
+    this.sfxGain?.gain.setTargetAtTime(this.sfxLevel * 0.34, this.context.currentTime, 0.025);
+  }
+
+  private tone(frequency: number, duration: number, options: { type?: OscillatorType; gain?: number; slide?: number; delay?: number; target?: GainNode | null } = {}) {
+    if (!this.context) return;
+    const start = this.context.currentTime + (options.delay ?? 0);
+    const oscillator = this.context.createOscillator();
+    const envelope = this.context.createGain();
+    oscillator.type = options.type ?? 'sine';
+    oscillator.frequency.setValueAtTime(frequency, start);
+    if (options.slide) oscillator.frequency.exponentialRampToValueAtTime(Math.max(25, frequency + options.slide), start + duration);
+    envelope.gain.setValueAtTime(0.0001, start);
+    envelope.gain.exponentialRampToValueAtTime(options.gain ?? 0.22, start + Math.min(0.025, duration * 0.2));
+    envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    oscillator.connect(envelope);
+    envelope.connect(options.target ?? this.sfxGain!);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.03);
+  }
+
+  private noise(duration: number, gain: number, cutoff: number) {
+    if (!this.context || !this.sfxGain) return;
+    const length = Math.ceil(this.context.sampleRate * duration);
+    const buffer = this.context.createBuffer(1, length, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < length; index += 1) data[index] = Math.random() * 2 - 1;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const envelope = this.context.createGain();
+    filter.type = 'lowpass';
+    filter.frequency.value = cutoff;
+    envelope.gain.setValueAtTime(gain, this.context.currentTime);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + duration);
+    source.buffer = buffer;
+    source.connect(filter).connect(envelope).connect(this.sfxGain);
+    source.start();
+  }
+
+  button() { this.tone(520, 0.08, { type: 'sine', gain: 0.12, slide: 120 }); }
+  chop() {
+    this.noise(0.09, 0.24, 1200);
+    this.tone(105, 0.14, { type: 'triangle', gain: 0.3, slide: -34 });
+    this.tone(740, 0.055, { type: 'square', gain: 0.045 });
+  }
+  treeFall() {
+    this.noise(0.48, 0.28, 520);
+    this.tone(82, 0.5, { type: 'sawtooth', gain: 0.22, slide: -45 });
+  }
+  pickup() {
+    this.tone(440, 0.11, { gain: 0.15, slide: 180 });
+    this.tone(710, 0.12, { gain: 0.1, delay: 0.075, slide: 80 });
+  }
+  logDrop(index = 0) {
+    this.tone(145 + index * 18, 0.1, { type: 'triangle', gain: 0.17, slide: -35 });
+    this.noise(0.055, 0.08, 420);
+  }
+  unload() {
+    this.tone(190, 0.12, { type: 'triangle', gain: 0.23, slide: -45 });
+    this.tone(330, 0.08, { gain: 0.08, delay: 0.045 });
+  }
+  coin() {
+    this.tone(880, 0.1, { gain: 0.14 });
+    this.tone(1320, 0.18, { gain: 0.12, delay: 0.08 });
+  }
+
+  startMusic() {
+    if (!this.context || this.musicTimer !== null) return;
+    const notes = [261.63, 329.63, 392, 329.63, 293.66, 349.23, 440, 392];
+    const playStep = () => {
+      const note = notes[this.musicStep % notes.length];
+      this.tone(note, 0.65, { type: 'sine', gain: 0.12, target: this.musicGain });
+      if (this.musicStep % 2 === 0) this.tone(note / 2, 1.15, { type: 'triangle', gain: 0.07, target: this.musicGain });
+      this.musicStep += 1;
+    };
+    playStep();
+    this.musicTimer = window.setInterval(playStep, 680);
+  }
+}
+
+const audio = new AudioEngine();
+musicVolume.value = `${Math.round(audio.musicLevel * 100)}`;
+sfxVolume.value = `${Math.round(audio.sfxLevel * 100)}`;
+musicVolumeValue.value = musicVolume.value;
+sfxVolumeValue.value = sfxVolume.value;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x86b95b);
@@ -111,6 +246,44 @@ scene.add(sun);
 
 const world = new THREE.Group();
 scene.add(world);
+
+interface BirdData {
+  group: THREE.Group;
+  speed: number;
+  phase: number;
+  lane: number;
+  scale: number;
+}
+
+const birds: BirdData[] = [];
+const birdMaterial = new THREE.MeshBasicMaterial({ color: 0x233b2c, side: THREE.DoubleSide });
+const birdWingGeometry = new THREE.BufferGeometry();
+birdWingGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+  0, 0, 0, -0.72, 0.08, 0.06, -0.18, 0, 0,
+  0, 0, 0, 0.72, 0.08, 0.06, 0.18, 0, 0,
+], 3));
+
+for (let index = 0; index < 7; index += 1) {
+  const bird = new THREE.Group();
+  const wings = new THREE.Mesh(birdWingGeometry, birdMaterial);
+  bird.add(wings);
+  const scale = 0.42 + (index % 3) * 0.11;
+  bird.scale.setScalar(scale);
+  bird.position.set(-18 - index * 5.2, 5.4 + (index % 3) * 1.15, -8 + (index % 4) * 5.4);
+  scene.add(bird);
+  birds.push({ group: bird, speed: 2.3 + (index % 3) * 0.42, phase: index * 0.9, lane: bird.position.z, scale });
+}
+
+const updateBirds = (delta: number, elapsed: number) => {
+  for (const bird of birds) {
+    bird.group.position.x += bird.speed * delta;
+    bird.group.position.z = bird.lane + Math.sin(elapsed * 0.32 + bird.phase) * 1.4;
+    bird.group.position.y += Math.sin(elapsed * 2.2 + bird.phase) * delta * 0.16;
+    bird.group.rotation.z = Math.sin(elapsed * 6.5 + bird.phase) * 0.16;
+    bird.group.scale.y = bird.scale * (0.62 + Math.abs(Math.sin(elapsed * 6.5 + bird.phase)) * 0.72);
+    if (bird.group.position.x > 25) bird.group.position.x = -25;
+  }
+};
 
 const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x78ad4f, roughness: 1 });
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(54, 70), grassMaterial);
@@ -562,6 +735,7 @@ const spawnFallenLogs = (treePosition: THREE.Vector3) => {
       mesh.scale.setScalar(0.7 + 0.3 * eased);
     }, () => {
       groundLog.settled = true;
+      audio.logDrop(index);
       bounceGroup(mesh);
     });
   }
@@ -569,6 +743,7 @@ const spawnFallenLogs = (treePosition: THREE.Vector3) => {
 
 const fellTree = (tree: TreeData) => {
   tree.alive = false;
+  audio.treeFall();
   tree.healthBar.visible = false;
   const treePosition = tree.group.position.clone();
   const away = treePosition.clone().sub(player.position);
@@ -596,6 +771,7 @@ const chopDuration = 1;
 
 const hitTree = (tree: TreeData) => {
   if (!tree.alive) return;
+  audio.chop();
   tree.hp = Math.max(0, tree.hp - state.damage);
   updateTreeHealthBar(tree);
   spawnParticles(tree.group.position, 0xc99248, 5);
@@ -626,6 +802,7 @@ const collectLog = (log: GroundLog) => {
     if (index >= 0) groundLogs.splice(index, 1);
     state.pendingCollection -= 1;
     state.carried += 1;
+    audio.pickup();
     rebuildPlayerStack();
     updateUI();
     bounceGroup(stackGroup);
@@ -663,6 +840,7 @@ const unloadOneLog = (station: StationData) => {
   }, () => {
     scene.remove(flyingLog);
     state.stock += 1;
+    audio.unload();
     rebuildStationPiles();
     updateUI();
     bounceGroup(station.pile);
@@ -684,6 +862,7 @@ const buyUpgrade = (kind: UpgradeKind) => {
     return;
   }
   state.gold -= cost;
+  audio.coin();
   state.levels[kind] += 1;
   if (kind === 'capacity') state.capacity += 2;
   if (kind === 'damage') state.damage += 1;
@@ -725,6 +904,7 @@ const showToast = (message: string) => {
 };
 
 const openPanel = (panel: HTMLElement) => {
+  audio.button();
   offerPanel.classList.add('hidden');
   upgradePanel.classList.add('hidden');
   panel.classList.remove('hidden');
@@ -741,7 +921,48 @@ const closePanels = () => {
   backdrop.classList.add('hidden');
 };
 
-const isPanelOpen = () => !backdrop.classList.contains('hidden');
+const isPanelOpen = () => !backdrop.classList.contains('hidden') || settingsOpen;
+
+const openSettings = async () => {
+  await audio.unlock();
+  audio.button();
+  settingsOpen = true;
+  settingsPanel.classList.remove('hidden');
+  settingsBackdrop.classList.remove('hidden');
+  joystickInput.set(0, 0);
+  joystickPointer = null;
+  joystick.classList.remove('active');
+};
+
+const closeSettings = () => {
+  audio.button();
+  settingsOpen = false;
+  settingsPanel.classList.add('hidden');
+  settingsBackdrop.classList.add('hidden');
+};
+
+settingsButton.addEventListener('click', openSettings);
+settingsClose.addEventListener('click', closeSettings);
+settingsBackdrop.addEventListener('click', closeSettings);
+
+musicVolume.addEventListener('input', () => {
+  musicVolumeValue.value = musicVolume.value;
+  audio.setMusic(Number(musicVolume.value) / 100);
+});
+sfxVolume.addEventListener('input', () => {
+  sfxVolumeValue.value = sfxVolume.value;
+  audio.setSfx(Number(sfxVolume.value) / 100);
+});
+
+playButton.addEventListener('click', async () => {
+  await audio.unlock();
+  audio.button();
+  audio.startMusic();
+  gameStarted = true;
+  playButton.querySelector('b')!.textContent = 'DEVAM ET';
+  mainMenu.classList.add('leaving');
+  document.body.classList.remove('menu-active');
+});
 
 offerButton.addEventListener('click', () => openPanel(offerPanel));
 upgradesButton.addEventListener('click', () => openPanel(upgradePanel));
@@ -755,6 +976,7 @@ sellButton.addEventListener('click', () => {
   if (!offer.active || state.stock < offer.wood) return;
   state.stock -= offer.wood;
   state.gold += offer.gold;
+  audio.coin();
   offer.active = false;
   offer.cooldown = 4;
   rebuildStationPiles();
@@ -951,6 +1173,7 @@ const finishBuildZone = (zone: BuildZoneData) => {
   world.remove(zone.group);
   spawnParticles(zone.spawnPosition, 0xf2d06b, 16);
   createStation(zone.spawnPosition, true);
+  audio.coin();
   showToast('Yeni odun istasyonu kuruldu!');
 };
 
@@ -1080,15 +1303,20 @@ updateUI();
 
 const clock = new THREE.Clock();
 let uiClock = 0;
+let ambientTime = 0;
 
 const animate = () => {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
-  updatePlayer(delta);
-  updateCollection(delta);
-  updateStations(delta);
-  updateBuildZones(delta);
-  updateOffer(delta);
+  ambientTime += delta;
+  updateBirds(delta, ambientTime);
+  if (gameStarted && !isPanelOpen()) {
+    updatePlayer(delta);
+    updateCollection(delta);
+    updateStations(delta);
+    updateBuildZones(delta);
+    updateOffer(delta);
+  }
   updateTweens(delta);
   updateCamera(delta);
   updateBillboards();
