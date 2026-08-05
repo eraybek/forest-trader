@@ -189,6 +189,15 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   background: #20bf55;
   box-shadow: inset 0 0 0 2px #65e883;
 }
+.wood-cost { display: inline-flex; align-items: center; gap: 7px; }
+.wood-cost::after {
+  content: '▰';
+  color: #b56b32;
+  font-size: 21px;
+  line-height: 1;
+  text-shadow: 0 2px #72411f;
+  transform: rotate(-8deg);
+}
 .log-icon, .big-log { color: #b56b32; text-shadow: 0 2px #72411f; transform: rotate(-8deg); }
 .log-icon { font-size: 22px; }
 
