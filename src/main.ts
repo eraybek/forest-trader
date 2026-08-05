@@ -22,7 +22,6 @@ interface StationData {
   group: THREE.Group;
   position: THREE.Vector3;
   pile: THREE.Group;
-  stockLabel: THREE.Sprite;
 }
 
 interface BuildZoneData {
@@ -445,24 +444,6 @@ player.add(stackGroup);
 
 const stackMeshes: THREE.Mesh[] = [];
 
-const chopProgress = new THREE.Group();
-chopProgress.visible = false;
-const chopProgressBack = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.22, 0.2),
-  new THREE.MeshBasicMaterial({ color: 0x30281f, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false }),
-);
-const chopProgressFill = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.08, 0.12),
-  new THREE.MeshBasicMaterial({ color: 0xffd84d, depthTest: false, depthWrite: false }),
-);
-chopProgressBack.renderOrder = 300;
-chopProgressFill.renderOrder = 301;
-chopProgressFill.position.z = 0.025;
-chopProgressFill.scale.x = 0.001;
-chopProgress.add(chopProgressBack, chopProgressFill);
-chopProgress.renderOrder = 300;
-scene.add(chopProgress);
-
 const rebuildPlayerStack = () => {
   for (const mesh of stackMeshes) stackGroup.remove(mesh);
   stackMeshes.length = 0;
@@ -594,41 +575,6 @@ const updatePurchaseLabel = (label: THREE.Mesh, paid: number, cost: number) => {
   if (material.map) material.map.needsUpdate = true;
 };
 
-const makeStationStockLabel = () => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 112;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas 2D context is unavailable.');
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
-  sprite.scale.set(1.85, 0.8, 1);
-  sprite.renderOrder = 210;
-  sprite.userData.canvas = canvas;
-  sprite.userData.context = context;
-  return sprite;
-};
-
-const updateStationStockLabel = (sprite: THREE.Sprite, stock: number) => {
-  const canvas = sprite.userData.canvas as HTMLCanvasElement;
-  const context = sprite.userData.context as CanvasRenderingContext2D;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(255, 247, 213, .96)';
-  context.roundRect(10, 10, 236, 92, 30);
-  context.fill();
-  context.lineWidth = 6;
-  context.strokeStyle = '#87502b';
-  context.stroke();
-  context.fillStyle = '#a45a2a';
-  context.font = '1000 42px system-ui';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText(`ODUN  ${stock}`, 128, 56);
-  const material = sprite.material as THREE.SpriteMaterial;
-  if (material.map) material.map.needsUpdate = true;
-};
-
 const addBox = (parent: THREE.Group, size: THREE.Vector3, position: THREE.Vector3, material: THREE.Material) => {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material);
   mesh.position.copy(position);
@@ -653,10 +599,6 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   pile.position.set(0, 0.2, 0.45);
   group.add(pile);
 
-  const stockLabel = makeStationStockLabel();
-  stockLabel.position.set(0, 1.36, 1.12);
-  group.add(stockLabel);
-
   const deliveryRing = new THREE.Mesh(
     new THREE.RingGeometry(2.82, 3.06, 40),
     new THREE.MeshBasicMaterial({ color: 0xffe18c, transparent: true, opacity: 0.72, side: THREE.DoubleSide }),
@@ -666,7 +608,7 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   group.add(deliveryRing);
 
   world.add(group);
-  const station = { group, position: position.clone(), pile, stockLabel };
+  const station = { group, position: position.clone(), pile };
   stations.push(station);
   if (animate) {
     group.scale.setScalar(0.02);
@@ -679,7 +621,6 @@ const createStation = (position: THREE.Vector3, animate = false) => {
 const rebuildStationPiles = () => {
   for (const station of stations) {
     station.pile.clear();
-    updateStationStockLabel(station.stockLabel, state.stock);
     const visibleLogs = Math.min(state.stock, 16);
     for (let index = 0; index < visibleLogs; index += 1) {
       const log = makeLogMesh(0.78);
@@ -830,7 +771,7 @@ const spawnFallenLogs = (treePosition: THREE.Vector3) => {
     scene.add(mesh);
     const groundLog: GroundLog = { mesh, collecting: false, settled: false };
     groundLogs.push(groundLog);
-    addTween(0.5 + index * 0.07, (progress) => {
+    addTween(0.32 + index * 0.04, (progress) => {
       const eased = easeOutCubic(progress);
       mesh.position.lerpVectors(start, target, eased);
       mesh.position.y += Math.sin(progress * Math.PI) * 0.9;
@@ -853,7 +794,7 @@ const fellTree = (tree: TreeData) => {
   const away = treePosition.clone().sub(player.position);
   tree.group.rotation.y = Math.atan2(away.x, away.z);
   spawnParticles(treePosition, 0x78b94e, 9);
-  addTween(0.62, (progress) => {
+  addTween(0.42, (progress) => {
     tree.group.rotation.z = -easeInOutCubic(progress) * Math.PI * 0.48;
   }, () => {
     spawnFallenLogs(treePosition);
@@ -1200,7 +1141,6 @@ const updatePlayer = (delta: number) => {
     legs[0].rotation.x = Math.sin(walkTime) * 0.35;
     legs[1].rotation.x = -Math.sin(walkTime) * 0.35;
     chopClock = 0;
-    chopProgress.visible = false;
     axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
   } else {
     playerVisual.position.y = THREE.MathUtils.lerp(playerVisual.position.y, 0, delta * 10);
@@ -1216,11 +1156,6 @@ const updatePlayer = (delta: number) => {
       player.rotation.y = playerRotation;
       chopClock += delta;
       const chopRatio = Math.min(1, chopClock / chopDuration);
-      chopProgress.visible = true;
-      chopProgress.position.copy(player.position).add(new THREE.Vector3(0, 2.18, 0));
-      chopProgress.quaternion.copy(camera.quaternion);
-      chopProgressFill.scale.x = Math.max(0.001, chopRatio);
-      chopProgressFill.position.x = -0.54 * (1 - chopRatio);
       if (chopRatio < 0.65) {
         axePivot.rotation.z = THREE.MathUtils.lerp(0.22, 0.98, easeInOutCubic(chopRatio / 0.65));
       } else {
@@ -1232,7 +1167,6 @@ const updatePlayer = (delta: number) => {
       }
     } else {
       chopClock = 0;
-      chopProgress.visible = false;
       axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
     }
   }
@@ -1359,7 +1293,7 @@ const updateBillboards = () => {
     tree.healthBar.quaternion.copy(camera.quaternion);
     // Tüm ormanı beyaz dairelerle kaplamak yerine yalnızca yakındaki
     // kesilebilir ağaçların menzilini göster.
-    tree.rangeIndicator.visible = tree.alive && tree.group.position.distanceToSquared(player.position) < 6.25 * 6.25;
+    tree.rangeIndicator.visible = tree.alive && tree.group.position.distanceToSquared(player.position) < 3.6 * 3.6;
   }
 };
 
