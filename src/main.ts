@@ -622,13 +622,16 @@ const createStation = (position: THREE.Vector3, animate = false) => {
 };
 
 const rebuildStationPiles = () => {
+  const logsPerRow = 4;
+  const horizontalLogSpacing = 0.82;
+  const rowStartX = -((logsPerRow - 1) * horizontalLogSpacing) / 2;
   for (const station of stations) {
     station.pile.clear();
     for (let index = 0; index < state.stock; index += 1) {
       const log = makeLogMesh(0.78);
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      log.position.set(-1.02 + column * 0.68, 0.22 + row * 0.34, 0);
+      const column = index % logsPerRow;
+      const row = Math.floor(index / logsPerRow);
+      log.position.set(rowStartX + column * horizontalLogSpacing, 0.22 + row * 0.34, 0);
       log.rotation.x = row % 2 === 0 ? 0.018 : -0.018;
       station.pile.add(log);
     }
@@ -943,7 +946,7 @@ const unloadOneLog = (station: StationData) => {
   flyingLog.position.copy(start);
   scene.add(flyingLog);
   const target = station.position.clone().add(new THREE.Vector3(
-    -1.02 + (state.stock % 4) * 0.68,
+    -1.23 + (state.stock % 4) * 0.82,
     0.42 + Math.floor(state.stock / 4) * 0.34,
     0.45,
   ));
