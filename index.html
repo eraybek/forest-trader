@@ -47,7 +47,7 @@
     </section>
 
     <div class="top-hud game-ui" aria-label="Kaynaklar">
-      <div class="resource-pill"><span class="coin-icon">●</span><strong id="gold-count">0</strong></div>
+      <div class="resource-pill"><span class="cash-icon" aria-hidden="true"></span><strong id="gold-count">0</strong></div>
       <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
     </div>
 
@@ -73,7 +73,7 @@
       <div class="offer-trade">
         <div><span class="big-log">▰</span><strong id="offer-wood">8</strong><small>odun</small></div>
         <span class="trade-arrow">→</span>
-        <div><span class="big-coin">●</span><strong id="offer-gold">20</strong><small>gold</small></div>
+        <div><span class="cash-icon big-cash" aria-hidden="true"></span><strong id="offer-gold">20</strong><small>para</small></div>
       </div>
       <div class="timer-row"><span>Kalan süre</span><strong id="offer-time">00:45</strong></div>
       <button id="sell-button" class="primary-button">Stoğu sat</button>
@@ -83,9 +83,9 @@
     <section id="upgrade-panel" class="game-panel hidden" aria-label="Geliştirme paneli">
       <header><div><span class="eyebrow">GELİŞTİRMELER</span><h2>Daha hızlı büyü</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
       <div class="upgrade-list">
-        <button class="upgrade-card" data-upgrade="capacity"><span class="upgrade-symbol">▰</span><span><strong>Taşıma kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b id="capacity-cost">15 ●</b></button>
-        <button class="upgrade-card" data-upgrade="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b id="damage-cost">25 ●</b></button>
-        <button class="upgrade-card" data-upgrade="speed"><span class="upgrade-symbol">»</span><span><strong>Hareket hızı</strong><small id="speed-value">100% → 112%</small></span><b id="speed-cost">20 ●</b></button>
+        <button class="upgrade-card" data-upgrade="capacity"><span class="upgrade-symbol">▰</span><span><strong>Taşıma kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b id="capacity-cost" class="cash-cost">15</b></button>
+        <button class="upgrade-card" data-upgrade="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b id="damage-cost" class="cash-cost">25</b></button>
+        <button class="upgrade-card" data-upgrade="speed"><span class="upgrade-symbol">»</span><span><strong>Hareket hızı</strong><small id="speed-value">100% → 112%</small></span><b id="speed-cost" class="cash-cost">20</b></button>
       </div>
     </section>
 
