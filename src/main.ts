@@ -21,6 +21,7 @@ interface StationData {
   group: THREE.Group;
   position: THREE.Vector3;
   pile: THREE.Group;
+  stockLabel: THREE.Sprite;
 }
 
 interface BuildZoneData {
@@ -396,7 +397,7 @@ hair.castShadow = true;
 playerVisual.add(hair);
 
 const axePivot = new THREE.Group();
-axePivot.position.set(-0.36, 1.15, -0.02);
+axePivot.position.set(-0.57, 0.94, -0.12);
 playerVisual.add(axePivot);
 const axeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.74, 6), trunkMaterial);
 axeHandle.position.y = -0.23;
@@ -407,7 +408,18 @@ axeHead.position.set(0.12, 0.13, 0);
 axeHead.rotation.z = -0.24;
 axeHead.castShadow = true;
 axePivot.add(axeHead);
-axePivot.rotation.z = 0.35;
+axePivot.rotation.z = 0.22;
+
+const toolArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.34, 4, 7), skinMaterial);
+toolArm.position.set(-0.39, 1.04, -0.1);
+toolArm.rotation.z = -0.38;
+toolArm.castShadow = true;
+playerVisual.add(toolArm);
+
+const toolHand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMaterial);
+toolHand.position.set(-0.56, 0.91, -0.12);
+toolHand.castShadow = true;
+playerVisual.add(toolHand);
 
 const stackGroup = new THREE.Group();
 stackGroup.position.set(0, 0, 0.68);
@@ -418,15 +430,19 @@ const stackMeshes: THREE.Mesh[] = [];
 const chopProgress = new THREE.Group();
 chopProgress.visible = false;
 const chopProgressBack = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.12, 0.16),
-  new THREE.MeshBasicMaterial({ color: 0x382d22, transparent: true, opacity: 0.9, depthTest: false }),
+  new THREE.PlaneGeometry(1.22, 0.2),
+  new THREE.MeshBasicMaterial({ color: 0x30281f, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false }),
 );
 const chopProgressFill = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.02, 0.1),
-  new THREE.MeshBasicMaterial({ color: 0xffd34e, depthTest: false }),
+  new THREE.PlaneGeometry(1.08, 0.12),
+  new THREE.MeshBasicMaterial({ color: 0xffd84d, depthTest: false, depthWrite: false }),
 );
-chopProgressFill.position.z = 0.01;
+chopProgressBack.renderOrder = 300;
+chopProgressFill.renderOrder = 301;
+chopProgressFill.position.z = 0.025;
+chopProgressFill.scale.x = 0.001;
 chopProgress.add(chopProgressBack, chopProgressFill);
+chopProgress.renderOrder = 300;
 scene.add(chopProgress);
 
 const rebuildPlayerStack = () => {
@@ -488,47 +504,92 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
   return tree;
 };
 
-const makeCanvasSprite = (text: string, accent = '#f2c14d') => {
+const makePurchaseLabel = (paid: number, cost: number) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 128;
+  canvas.width = 512;
+  canvas.height = 320;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context is unavailable.');
-  context.fillStyle = 'rgba(45, 42, 29, .88)';
-  context.roundRect(12, 12, 232, 104, 28);
-  context.fill();
-  context.lineWidth = 7;
-  context.strokeStyle = 'rgba(255,255,255,.85)';
-  context.stroke();
-  context.fillStyle = accent;
-  context.font = '900 44px system-ui';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText(text, 128, 64);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
-  sprite.scale.set(3.4, 1.7, 1);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
+  sprite.scale.set(3.65, 2.28, 1);
+  sprite.renderOrder = 220;
+  sprite.userData.canvas = canvas;
+  sprite.userData.context = context;
+  updatePurchaseLabel(sprite, paid, cost);
+  return sprite;
+};
+
+const updatePurchaseLabel = (sprite: THREE.Sprite, paid: number, cost: number) => {
+  const canvas = sprite.userData.canvas as HTMLCanvasElement;
+  const context = sprite.userData.context as CanvasRenderingContext2D;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = 'rgba(246, 224, 168, .97)';
+  context.roundRect(18, 18, 476, 284, 42);
+  context.fill();
+  context.lineWidth = 12;
+  context.strokeStyle = '#fff9df';
+  context.stroke();
+  context.lineWidth = 5;
+  context.strokeStyle = '#8c552e';
+  context.stroke();
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = '#5c3a24';
+  context.font = '900 43px system-ui';
+  context.fillText('KÜTÜK İSTASYONU', 256, 76);
+  context.fillStyle = '#fff4c9';
+  context.roundRect(106, 117, 300, 93, 30);
+  context.fill();
+  context.fillStyle = '#3d6936';
+  context.font = '1000 66px system-ui';
+  context.fillText(`${paid} / ${cost}`, 256, 165);
+  context.fillStyle = '#9a5f20';
+  context.beginPath();
+  context.arc(196, 254, 23, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#fff2a8';
+  context.font = '1000 30px system-ui';
+  context.fillText('G', 196, 254);
+  context.fillStyle = '#6f4829';
+  context.font = '900 35px system-ui';
+  context.fillText('GOLD', 282, 255);
+  const material = sprite.material as THREE.SpriteMaterial;
+  if (material.map) material.map.needsUpdate = true;
+};
+
+const makeStationStockLabel = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 112;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context is unavailable.');
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
+  sprite.scale.set(1.85, 0.8, 1);
+  sprite.renderOrder = 210;
   sprite.userData.canvas = canvas;
   sprite.userData.context = context;
   return sprite;
 };
 
-const updateSpriteText = (sprite: THREE.Sprite, text: string, accent = '#f2c14d') => {
+const updateStationStockLabel = (sprite: THREE.Sprite, stock: number) => {
   const canvas = sprite.userData.canvas as HTMLCanvasElement;
   const context = sprite.userData.context as CanvasRenderingContext2D;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(45, 42, 29, .88)';
-  context.roundRect(12, 12, 232, 104, 28);
+  context.fillStyle = 'rgba(255, 247, 213, .96)';
+  context.roundRect(10, 10, 236, 92, 30);
   context.fill();
-  context.lineWidth = 7;
-  context.strokeStyle = 'rgba(255,255,255,.85)';
+  context.lineWidth = 6;
+  context.strokeStyle = '#87502b';
   context.stroke();
-  context.fillStyle = accent;
-  context.font = '900 44px system-ui';
+  context.fillStyle = '#a45a2a';
+  context.font = '1000 42px system-ui';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  context.fillText(text, 128, 64);
+  context.fillText(`ODUN  ${stock}`, 128, 56);
   const material = sprite.material as THREE.SpriteMaterial;
   if (material.map) material.map.needsUpdate = true;
 };
@@ -549,13 +610,17 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   const platformMaterial = new THREE.MeshStandardMaterial({ color: 0xd2b278, roughness: 1 });
   const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x577b42, roughness: 0.9 });
   addBox(group, new THREE.Vector3(4.3, 0.22, 3.1), new THREE.Vector3(0, 0.11, 0), platformMaterial);
-  addBox(group, new THREE.Vector3(0.2, 2.3, 0.2), new THREE.Vector3(-1.7, 1.15, -1.12), darkTrunkMaterial);
-  addBox(group, new THREE.Vector3(0.2, 2.3, 0.2), new THREE.Vector3(1.7, 1.15, -1.12), darkTrunkMaterial);
-  addBox(group, new THREE.Vector3(3.9, 0.25, 2.2), new THREE.Vector3(0, 2.2, -0.35), roofMaterial).rotation.x = -0.08;
+  addBox(group, new THREE.Vector3(0.2, 2.55, 0.2), new THREE.Vector3(-1.7, 1.28, -1.15), darkTrunkMaterial);
+  addBox(group, new THREE.Vector3(0.2, 2.55, 0.2), new THREE.Vector3(1.7, 1.28, -1.15), darkTrunkMaterial);
+  addBox(group, new THREE.Vector3(3.9, 0.25, 1.12), new THREE.Vector3(0, 2.48, -1.02), roofMaterial).rotation.x = -0.08;
 
   const pile = new THREE.Group();
-  pile.position.set(0, 0.2, -0.15);
+  pile.position.set(0, 0.2, 0.45);
   group.add(pile);
+
+  const stockLabel = makeStationStockLabel();
+  stockLabel.position.set(0, 1.36, 1.12);
+  group.add(stockLabel);
 
   const deliveryRing = new THREE.Mesh(
     new THREE.RingGeometry(2.82, 3.06, 40),
@@ -566,7 +631,7 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   group.add(deliveryRing);
 
   world.add(group);
-  const station = { group, position: position.clone(), pile };
+  const station = { group, position: position.clone(), pile, stockLabel };
   stations.push(station);
   if (animate) {
     group.scale.setScalar(0.02);
@@ -579,12 +644,13 @@ const createStation = (position: THREE.Vector3, animate = false) => {
 const rebuildStationPiles = () => {
   for (const station of stations) {
     station.pile.clear();
+    updateStationStockLabel(station.stockLabel, state.stock);
     const visibleLogs = Math.min(state.stock, 16);
     for (let index = 0; index < visibleLogs; index += 1) {
       const log = makeLogMesh(0.78);
       const column = index % 4;
       const row = Math.floor(index / 4);
-      log.position.set(-0.85 + column * 0.56, 0.22 + row * 0.28, -0.2);
+      log.position.set(-0.85 + column * 0.56, 0.22 + row * 0.28, 0);
       station.pile.add(log);
     }
   }
@@ -618,9 +684,8 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(edge / 2, 0.075, 0), borderMaterial);
   addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(-edge / 2, 0.075, 0), borderMaterial);
 
-  const label = makeCanvasSprite(`STATION · 0/${cost} · GOLD`, '#ffe071');
-  label.position.y = 1.45;
-  label.scale.set(4.1, 2.05, 1);
+  const label = makePurchaseLabel(0, cost);
+  label.position.set(0, 1.62, -1.05);
   group.add(label);
   world.add(group);
   buildZones.push({
@@ -1096,7 +1161,7 @@ const updatePlayer = (delta: number) => {
     legs[1].rotation.x = -Math.sin(walkTime) * 0.35;
     chopClock = 0;
     chopProgress.visible = false;
-    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.35, delta * 12);
+    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
   } else {
     playerVisual.position.y = THREE.MathUtils.lerp(playerVisual.position.y, 0, delta * 10);
     legs[0].rotation.x = THREE.MathUtils.lerp(legs[0].rotation.x, 0, delta * 10);
@@ -1115,9 +1180,9 @@ const updatePlayer = (delta: number) => {
       chopProgress.position.copy(player.position).add(new THREE.Vector3(0, 2.18, 0));
       chopProgress.quaternion.copy(camera.quaternion);
       chopProgressFill.scale.x = Math.max(0.001, chopRatio);
-      chopProgressFill.position.x = -0.51 * (1 - chopRatio);
+      chopProgressFill.position.x = -0.54 * (1 - chopRatio);
       if (chopRatio < 0.65) {
-        axePivot.rotation.z = THREE.MathUtils.lerp(0.35, 0.98, easeInOutCubic(chopRatio / 0.65));
+        axePivot.rotation.z = THREE.MathUtils.lerp(0.22, 0.98, easeInOutCubic(chopRatio / 0.65));
       } else {
         axePivot.rotation.z = THREE.MathUtils.lerp(0.98, -1.22, easeInOutCubic((chopRatio - 0.65) / 0.35));
       }
@@ -1128,7 +1193,7 @@ const updatePlayer = (delta: number) => {
     } else {
       chopClock = 0;
       chopProgress.visible = false;
-      axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.35, delta * 12);
+      axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.22, delta * 12);
     }
   }
 
@@ -1190,7 +1255,7 @@ const updateBuildZones = (delta: number) => {
         const ratio = zone.paid / zone.cost;
         zone.progressFill.scale.x = Math.max(0.001, ratio);
         zone.progressFill.position.x = -1.335 * (1 - ratio);
-        updateSpriteText(zone.label, `STATION · ${zone.paid}/${zone.cost} · GOLD`, '#ffe071');
+        updatePurchaseLabel(zone.label, zone.paid, zone.cost);
         bounceGroup(zone.group);
         updateUI();
         if (zone.paid >= zone.cost) finishBuildZone(zone);
