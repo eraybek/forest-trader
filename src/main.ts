@@ -437,7 +437,7 @@ const offer: OfferData = {
   wood: 8,
   gold: 20,
   remaining: 45,
-  active: true,
+  active: false,
   cooldown: 0,
 };
 offerButton.classList.add('hidden');
@@ -870,17 +870,6 @@ const createTavern = (position: THREE.Vector3) => {
   const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe0c18c, roughness: 1 });
   const plasterMaterial = new THREE.MeshStandardMaterial({ color: 0xead6a8, roughness: 1 });
   const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x754529, roughness: 0.85 });
-  const blueprintMaterial = new THREE.MeshBasicMaterial({ color: 0xf8e5b9, transparent: true, opacity: 0.45 });
-
-  // İnşaat başlamadan önce tavernanın kaplayacağı alanı gösteren sade temel çizgisi.
-  const footprint = new THREE.Group();
-  const footprintWidth = 16.2;
-  const footprintDepth = 13.4;
-  addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, footprintDepth / 2), blueprintMaterial);
-  addBox(footprint, new THREE.Vector3(footprintWidth, 0.045, 0.11), new THREE.Vector3(0, 0.035, -footprintDepth / 2), blueprintMaterial);
-  addBox(footprint, new THREE.Vector3(0.11, 0.045, footprintDepth), new THREE.Vector3(footprintWidth / 2, 0.035, 0), blueprintMaterial);
-  addBox(footprint, new THREE.Vector3(0.11, 0.045, footprintDepth), new THREE.Vector3(-footprintWidth / 2, 0.035, 0), blueprintMaterial);
-  group.add(footprint);
 
   const floorStage = new THREE.Group();
   addBox(floorStage, new THREE.Vector3(15.8, 0.18, 13), new THREE.Vector3(0, 0.09, 0), floorMaterial);
@@ -968,7 +957,9 @@ const createTavern = (position: THREE.Vector3) => {
     group.add(stage);
   }
 
-  const deliveryPosition = position.clone().add(new THREE.Vector3(6.25, 0, -8.0));
+  // Oyuncuya boş bina sınırı göstermiyoruz. Tek başlangıç hedefi, kapının
+  // karşısında ve doğrudan ana yolun üzerinde duran 12 odun teslim noktasıdır.
+  const deliveryPosition = position.clone().add(new THREE.Vector3(9.45, 0, 0));
   const deliveryRing = new THREE.Group();
   deliveryRing.position.copy(group.worldToLocal(deliveryPosition.clone()));
   const ringFill = new THREE.Mesh(
@@ -1822,17 +1813,6 @@ sellButton.addEventListener('click', () => {
   showToast(`Teklif tamamlandı: +${offer.gold} para`);
 });
 
-const generateOffer = () => {
-  const options = [5, 6, 8, 10];
-  offer.wood = options[Math.floor(seededRandom() * options.length)];
-  offer.gold = Math.round(offer.wood * (2.4 + seededRandom() * 0.8));
-  offer.remaining = 45;
-  offer.active = true;
-  offer.cooldown = 0;
-  updateUI();
-  showToast('Yeni teklif geldi!');
-};
-
 const joystickInput = new THREE.Vector2();
 let joystickPointer: number | null = null;
 let joystickCenter = new THREE.Vector2();
@@ -2098,21 +2078,6 @@ const updateContextHint = () => {
   actionHint.classList.toggle('hidden', message.length === 0);
 };
 
-const updateOffer = (delta: number) => {
-  if (offer.active) {
-    offer.remaining -= delta;
-    if (offer.remaining <= 0) {
-      offer.active = false;
-      offer.cooldown = 3;
-      closePanels();
-      showToast('Teklifin süresi doldu');
-    }
-  } else if (offer.cooldown > 0) {
-    offer.cooldown -= delta;
-    if (offer.cooldown <= 0) generateOffer();
-  }
-};
-
 const updateTweens = (delta: number) => {
   for (let index = tweens.length - 1; index >= 0; index -= 1) {
     const tween = tweens[index];
@@ -2200,7 +2165,6 @@ const animate = () => {
     updateTavern(delta);
     updateCustomers(delta);
     updateTips();
-    updateOffer(delta);
   }
   updateTweens(delta);
   updateCamera(delta);
