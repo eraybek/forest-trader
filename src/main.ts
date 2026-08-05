@@ -299,9 +299,10 @@ renderer.toneMappingExposure = 1.08;
 gameRoot.appendChild(renderer.domElement);
 
 const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
-// Yolun karşı tarafından kapıya doğru bakar. Kapı cephesi ekranda karşıdan
-// okunurken kamera yüksekliği mekânın içini görünür tutar.
-const cameraOffset = new THREE.Vector3(14, 18, 0);
+// Kapının karşısından hafif güneydoğu çaprazına kaydırılmış, yaklaşık 54°
+// yükseltili ortografik açı. Açık oyuncak ev görünümünü korurken kapı cephesini
+// ve tavernanın iç düzenini aynı karede okunur tutar.
+const cameraOffset = new THREE.Vector3(14, 21, -6);
 const cameraTarget = new THREE.Vector3();
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
@@ -908,21 +909,27 @@ const createTavern = (position: THREE.Vector3) => {
 
   const wallStage = new THREE.Group();
   const wallHeight = 3.15;
-  addBox(wallStage, new THREE.Vector3(15.9, wallHeight, 0.32), new THREE.Vector3(0, wallHeight / 2, -6.5), wallMaterial);
+  const nearWallHeight = 0.72;
+  const nearPostHeight = 0.92;
+
+  // Kameraya yakın güney ve doğu cepheleri bel hizasında bırakılır. Karşıdaki
+  // kuzey ve batı duvarları tam yükseklikte kalarak iç yüzleri görünür olur.
+  addBox(wallStage, new THREE.Vector3(15.9, nearWallHeight, 0.32), new THREE.Vector3(0, nearWallHeight / 2, -6.5), wallMaterial);
   addBox(wallStage, new THREE.Vector3(15.9, wallHeight, 0.32), new THREE.Vector3(0, wallHeight / 2, 6.5), wallMaterial);
   addBox(wallStage, new THREE.Vector3(0.32, wallHeight, 13.1), new THREE.Vector3(-7.9, wallHeight / 2, 0), wallMaterial);
-  // Yol tarafındaki doğu duvarı, ortadaki kapı boşluğu korunarak iki parçadır.
-  addBox(wallStage, new THREE.Vector3(0.32, wallHeight, 5.35), new THREE.Vector3(7.9, wallHeight / 2, -3.82), wallMaterial);
-  addBox(wallStage, new THREE.Vector3(0.32, wallHeight, 5.35), new THREE.Vector3(7.9, wallHeight / 2, 3.82), wallMaterial);
-  for (const z of [-6.5, 6.5]) {
-    addBox(wallStage, new THREE.Vector3(0.4, 3.48, 0.4), new THREE.Vector3(-7.9, 1.74, z), darkTrunkMaterial);
-    addBox(wallStage, new THREE.Vector3(0.4, 3.48, 0.4), new THREE.Vector3(7.9, 1.74, z), darkTrunkMaterial);
-  }
+  // Yol tarafındaki doğu duvarı kapı boşluğunu korur fakat içeriği kapatmaz.
+  addBox(wallStage, new THREE.Vector3(0.32, nearWallHeight, 5.35), new THREE.Vector3(7.9, nearWallHeight / 2, -3.82), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.32, nearWallHeight, 5.35), new THREE.Vector3(7.9, nearWallHeight / 2, 3.82), wallMaterial);
+  addBox(wallStage, new THREE.Vector3(0.4, nearPostHeight, 0.4), new THREE.Vector3(-7.9, nearPostHeight / 2, -6.5), darkTrunkMaterial);
+  addBox(wallStage, new THREE.Vector3(0.4, wallHeight + 0.33, 0.4), new THREE.Vector3(-7.9, (wallHeight + 0.33) / 2, 6.5), darkTrunkMaterial);
+  addBox(wallStage, new THREE.Vector3(0.4, nearPostHeight, 0.4), new THREE.Vector3(7.9, nearPostHeight / 2, -6.5), darkTrunkMaterial);
+  addBox(wallStage, new THREE.Vector3(0.4, nearPostHeight, 0.4), new THREE.Vector3(7.9, nearPostHeight / 2, 6.5), darkTrunkMaterial);
 
   const entranceStage = new THREE.Group();
-  addBox(entranceStage, new THREE.Vector3(0.4, 3.22, 0.32), new THREE.Vector3(7.9, 1.61, -1.12), darkTrunkMaterial);
-  addBox(entranceStage, new THREE.Vector3(0.4, 3.22, 0.32), new THREE.Vector3(7.9, 1.61, 1.12), darkTrunkMaterial);
-  addBox(entranceStage, new THREE.Vector3(0.42, 0.32, 2.56), new THREE.Vector3(7.9, 3.16, 0), darkTrunkMaterial);
+  // Kapı eşiği kısa iki direkle okunur; yüksek lento kamera önünde perde
+  // oluşturmadığı için içecek taşıma ve müşteri akışı açıkça görülebilir.
+  addBox(entranceStage, new THREE.Vector3(0.4, nearPostHeight, 0.32), new THREE.Vector3(7.9, nearPostHeight / 2, -1.12), darkTrunkMaterial);
+  addBox(entranceStage, new THREE.Vector3(0.4, nearPostHeight, 0.32), new THREE.Vector3(7.9, nearPostHeight / 2, 1.12), darkTrunkMaterial);
   // Ana servis tezgâhı aynı zamanda müşterilerin sıraya girdiği tek noktadır.
   addBox(entranceStage, new THREE.Vector3(0.82, 1.02, 5.2), new THREE.Vector3(-2.8, 0.7, -3.35), counterMaterial);
   addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-2.8, 1.27, -3.35), floorAccentMaterial);
@@ -2163,9 +2170,10 @@ const getMovementInput = () => {
   return isPanelOpen() ? input.set(0, 0) : input;
 };
 
-// Kamera kapının karşısına döndüğü için ekran yukarısı batı, ekran sağı kuzeydir.
-const movementForward = new THREE.Vector3(-1, 0, 0);
-const movementRight = new THREE.Vector3(0, 0, -1);
+// Joystick yönleri kameranın hafif çaprazına otomatik uyar: yukarı her zaman
+// ekranda yukarı, sağ da her zaman ekranda sağ hareket ettirir.
+const movementForward = new THREE.Vector3(-cameraOffset.x, 0, -cameraOffset.z).normalize();
+const movementRight = new THREE.Vector3(cameraOffset.z, 0, -cameraOffset.x).normalize();
 const desiredMovement = new THREE.Vector3();
 let playerRotation = 0;
 let walkTime = 0;
