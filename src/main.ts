@@ -14,6 +14,7 @@ interface TreeData {
 interface GroundLog {
   mesh: THREE.Mesh;
   collecting: boolean;
+  settled: boolean;
 }
 
 interface StationData {
@@ -27,6 +28,7 @@ interface BuildZoneData {
   position: THREE.Vector3;
   spawnPosition: THREE.Vector3;
   label: THREE.Sprite;
+  progressFill: THREE.Mesh;
   cost: number;
   paid: number;
   built: boolean;
@@ -135,6 +137,7 @@ const leafMaterials = [
 ];
 
 const trees: TreeData[] = [];
+const treeOccluderMeshes: THREE.Mesh[] = [];
 const groundLogs: GroundLog[] = [];
 const stations: StationData[] = [];
 const buildZones: BuildZoneData[] = [];
@@ -239,15 +242,27 @@ player.add(stackGroup);
 
 const stackMeshes: THREE.Mesh[] = [];
 
+const chopProgress = new THREE.Group();
+chopProgress.visible = false;
+const chopProgressBack = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.12, 0.16),
+  new THREE.MeshBasicMaterial({ color: 0x382d22, transparent: true, opacity: 0.9, depthTest: false }),
+);
+const chopProgressFill = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.02, 0.1),
+  new THREE.MeshBasicMaterial({ color: 0xffd34e, depthTest: false }),
+);
+chopProgressFill.position.z = 0.01;
+chopProgress.add(chopProgressBack, chopProgressFill);
+scene.add(chopProgress);
+
 const rebuildPlayerStack = () => {
   for (const mesh of stackMeshes) stackGroup.remove(mesh);
   stackMeshes.length = 0;
   for (let index = 0; index < state.carried; index += 1) {
     const log = makeLogMesh(0.78);
-    const row = Math.floor(index / 2);
-    const column = index % 2;
-    log.position.set(column === 0 ? -0.19 : 0.19, 0.32 + row * 0.24, 0);
-    log.rotation.x = column === 0 ? 0.04 : -0.04;
+    log.position.set(0, 0.34 + index * 0.235, 0);
+    log.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
     stackGroup.add(log);
     stackMeshes.push(log);
   }
@@ -257,13 +272,13 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
   const group = new THREE.Group();
   group.position.copy(position);
 
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 2.35, 7), trunkMaterial);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 2.35, 7), trunkMaterial.clone());
   trunk.position.y = 1.15;
   trunk.castShadow = true;
   trunk.receiveShadow = true;
   group.add(trunk);
 
-  const leafMaterial = leafMaterials[variant % leafMaterials.length];
+  const leafMaterial = leafMaterials[variant % leafMaterials.length].clone();
   const layerData = [
     { y: 1.75, radius: 1.12, height: 1.85 },
     { y: 2.45, radius: 0.9, height: 1.65 },
@@ -288,6 +303,14 @@ const makeTree = (position: THREE.Vector3, variant: number): TreeData => {
 
   world.add(group);
   const tree: TreeData = { group, healthBar, home: position.clone(), hp: 3, alive: true };
+  group.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill) return;
+    child.userData.tree = tree;
+    child.userData.occludable = true;
+    const material = child.material as THREE.Material;
+    material.transparent = true;
+    treeOccluderMeshes.push(child);
+  });
   trees.push(tree);
   return tree;
 };
@@ -362,7 +385,7 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   group.add(pile);
 
   const deliveryRing = new THREE.Mesh(
-    new THREE.RingGeometry(2.15, 2.34, 40),
+    new THREE.RingGeometry(2.82, 3.06, 40),
     new THREE.MeshBasicMaterial({ color: 0xffe18c, transparent: true, opacity: 0.72, side: THREE.DoubleSide }),
   );
   deliveryRing.rotation.x = -Math.PI / 2;
@@ -397,23 +420,34 @@ const rebuildStationPiles = () => {
 const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, cost: number) => {
   const group = new THREE.Group();
   group.position.copy(position);
-  const disk = new THREE.Mesh(
-    new THREE.CircleGeometry(1.45, 40),
-    new THREE.MeshBasicMaterial({ color: 0xe8c75f, transparent: true, opacity: 0.42, side: THREE.DoubleSide }),
+  const padSize = 2.85;
+  const pad = new THREE.Mesh(
+    new THREE.PlaneGeometry(padSize, padSize),
+    new THREE.MeshBasicMaterial({ color: 0xf6d873, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
   );
-  disk.rotation.x = -Math.PI / 2;
-  disk.position.y = 0.03;
-  group.add(disk);
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(1.25, 1.47, 40),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.86, side: THREE.DoubleSide }),
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.035;
+  group.add(pad);
+
+  const progressFill = new THREE.Mesh(
+    new THREE.PlaneGeometry(padSize - 0.18, padSize - 0.18),
+    new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.04;
-  ring.name = 'ring';
-  group.add(ring);
-  const label = makeCanvasSprite(`🔒 ${cost}`);
-  label.position.y = 2.2;
+  progressFill.rotation.x = -Math.PI / 2;
+  progressFill.position.set(-(padSize - 0.18) / 2, 0.045, 0);
+  progressFill.scale.x = 0.001;
+  group.add(progressFill);
+
+  const borderMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.94 });
+  const edge = padSize + 0.1;
+  addBox(group, new THREE.Vector3(edge, 0.075, 0.11), new THREE.Vector3(0, 0.075, edge / 2), borderMaterial);
+  addBox(group, new THREE.Vector3(edge, 0.075, 0.11), new THREE.Vector3(0, 0.075, -edge / 2), borderMaterial);
+  addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(edge / 2, 0.075, 0), borderMaterial);
+  addBox(group, new THREE.Vector3(0.11, 0.075, edge), new THREE.Vector3(-edge / 2, 0.075, 0), borderMaterial);
+
+  const label = makeCanvasSprite(`STATION · 0/${cost} · GOLD`, '#ffe071');
+  label.position.y = 1.45;
+  label.scale.set(4.1, 2.05, 1);
   group.add(label);
   world.add(group);
   buildZones.push({
@@ -421,6 +455,7 @@ const createBuildZone = (position: THREE.Vector3, spawnOffset: THREE.Vector3, co
     position: position.clone(),
     spawnPosition: position.clone().add(spawnOffset),
     label,
+    progressFill,
     cost,
     paid: 0,
     built: false,
@@ -437,19 +472,20 @@ const seededRandom = (() => {
 })();
 
 const isClearForTree = (position: THREE.Vector3) => {
-  if (Math.abs(position.x + position.z * 0.13) < 5.2) return false;
-  if (position.distanceTo(new THREE.Vector3(0, 0, 5)) < 5.5) return false;
+  if (Math.abs(position.x + position.z * 0.13) < 3.8) return false;
+  if (position.distanceTo(new THREE.Vector3(0, 0, 5)) < 5.1) return false;
   const reserved = [new THREE.Vector3(12, 0, -15), new THREE.Vector3(-13, 0, -9), new THREE.Vector3(-10, 0, 20)];
-  return reserved.every((point) => position.distanceTo(point) > 3.7);
+  if (!reserved.every((point) => position.distanceTo(point) > 3.7)) return false;
+  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.55);
 };
 
-for (let index = 0; index < 58; index += 1) {
+for (let index = 0; index < 90; index += 1) {
   let position = new THREE.Vector3();
   let attempts = 0;
   do {
     position = new THREE.Vector3((seededRandom() - 0.5) * 48, 0, (seededRandom() - 0.5) * 62);
     attempts += 1;
-  } while (!isClearForTree(position) && attempts < 50);
+  } while (!isClearForTree(position) && attempts < 180);
   if (isClearForTree(position)) makeTree(position, index);
 }
 
@@ -516,14 +552,17 @@ const spawnFallenLogs = (treePosition: THREE.Vector3) => {
     mesh.position.copy(start);
     mesh.scale.setScalar(0.7);
     scene.add(mesh);
-    const groundLog: GroundLog = { mesh, collecting: false };
+    const groundLog: GroundLog = { mesh, collecting: false, settled: false };
     groundLogs.push(groundLog);
-    addTween(0.48 + index * 0.05, (progress) => {
+    addTween(0.5 + index * 0.07, (progress) => {
       const eased = easeOutCubic(progress);
       mesh.position.lerpVectors(start, target, eased);
       mesh.position.y += Math.sin(progress * Math.PI) * 0.9;
       mesh.rotation.y = angle + progress * 1.8;
       mesh.scale.setScalar(0.7 + 0.3 * eased);
+    }, () => {
+      groundLog.settled = true;
+      bounceGroup(mesh);
     });
   }
 };
@@ -552,17 +591,13 @@ const fellTree = (tree: TreeData) => {
   });
 };
 
-let axeSwingProgress = 0;
-let axeSwinging = false;
-let choppingTree: TreeData | null = null;
 let chopClock = 0;
+const chopDuration = 1;
 
 const hitTree = (tree: TreeData) => {
   if (!tree.alive) return;
   tree.hp = Math.max(0, tree.hp - state.damage);
   updateTreeHealthBar(tree);
-  axeSwinging = true;
-  axeSwingProgress = 0;
   spawnParticles(tree.group.position, 0xc99248, 5);
   const startingRotation = tree.group.rotation.z;
   addTween(0.22, (progress) => {
@@ -572,13 +607,14 @@ const hitTree = (tree: TreeData) => {
 };
 
 const collectLog = (log: GroundLog) => {
-  if (log.collecting || state.carried + state.pendingCollection >= state.capacity) return;
+  if (!log.settled || log.collecting || state.carried + state.pendingCollection >= state.capacity) return;
   log.collecting = true;
   state.pendingCollection += 1;
+  const stackIndex = state.carried + state.pendingCollection - 1;
   const start = log.mesh.position.clone();
   const startScale = log.mesh.scale.clone();
-  addTween(0.42, (progress) => {
-    const target = new THREE.Vector3(0, 0.4 + state.carried * 0.23, 0.75);
+  addTween(0.48, (progress) => {
+    const target = new THREE.Vector3(0, 0.34 + stackIndex * 0.235, 0.75);
     player.localToWorld(target);
     log.mesh.position.lerpVectors(start, target, easeOutCubic(progress));
     log.mesh.position.y += Math.sin(progress * Math.PI) * 1.05;
@@ -596,7 +632,7 @@ const collectLog = (log: GroundLog) => {
   });
 };
 
-const bounceGroup = (group: THREE.Group) => {
+const bounceGroup = (group: THREE.Object3D) => {
   addTween(0.22, (progress) => {
     const scale = 1 + Math.sin(progress * Math.PI) * 0.12;
     group.scale.set(scale, scale, scale);
@@ -694,7 +730,9 @@ const openPanel = (panel: HTMLElement) => {
   panel.classList.remove('hidden');
   backdrop.classList.remove('hidden');
   joystickInput.set(0, 0);
+  joystickPointer = null;
   joystickKnob.style.transform = 'translate(-50%, -50%)';
+  joystick.classList.remove('active');
 };
 
 const closePanels = () => {
@@ -738,24 +776,28 @@ const generateOffer = () => {
 
 const joystickInput = new THREE.Vector2();
 let joystickPointer: number | null = null;
+let joystickCenter = new THREE.Vector2();
 
 const updateJoystick = (event: PointerEvent) => {
-  const rect = joystick.getBoundingClientRect();
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-  const radius = rect.width * 0.34;
-  const delta = new THREE.Vector2(event.clientX - centerX, event.clientY - centerY);
+  const radius = 42;
+  const delta = new THREE.Vector2(event.clientX - joystickCenter.x, event.clientY - joystickCenter.y);
   if (delta.length() > radius) delta.setLength(radius);
   joystickInput.set(delta.x / radius, -delta.y / radius);
   joystickKnob.style.transform = `translate(calc(-50% + ${delta.x}px), calc(-50% + ${delta.y}px))`;
 };
 
-joystick.addEventListener('pointerdown', (event) => {
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (isPanelOpen() || joystickPointer !== null) return;
   joystickPointer = event.pointerId;
-  joystick.setPointerCapture(event.pointerId);
-  updateJoystick(event);
+  joystickCenter = new THREE.Vector2(event.clientX, event.clientY);
+  joystick.style.left = `${event.clientX}px`;
+  joystick.style.top = `${event.clientY}px`;
+  joystick.classList.add('active');
+  renderer.domElement.setPointerCapture(event.pointerId);
+  joystickInput.set(0, 0);
+  joystickKnob.style.transform = 'translate(-50%, -50%)';
 });
-joystick.addEventListener('pointermove', (event) => {
+renderer.domElement.addEventListener('pointermove', (event) => {
   if (joystickPointer === event.pointerId) updateJoystick(event);
 });
 const releaseJoystick = (event: PointerEvent) => {
@@ -763,9 +805,10 @@ const releaseJoystick = (event: PointerEvent) => {
   joystickPointer = null;
   joystickInput.set(0, 0);
   joystickKnob.style.transform = 'translate(-50%, -50%)';
+  joystick.classList.remove('active');
 };
-joystick.addEventListener('pointerup', releaseJoystick);
-joystick.addEventListener('pointercancel', releaseJoystick);
+renderer.domElement.addEventListener('pointerup', releaseJoystick);
+renderer.domElement.addEventListener('pointercancel', releaseJoystick);
 
 window.addEventListener('keydown', (event) => keys.add(event.code));
 window.addEventListener('keyup', (event) => keys.delete(event.code));
@@ -829,15 +872,15 @@ const updatePlayer = (delta: number) => {
     playerVisual.position.y = Math.abs(Math.sin(walkTime)) * 0.055;
     legs[0].rotation.x = Math.sin(walkTime) * 0.35;
     legs[1].rotation.x = -Math.sin(walkTime) * 0.35;
-    choppingTree = null;
     chopClock = 0;
+    chopProgress.visible = false;
+    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.35, delta * 12);
   } else {
     playerVisual.position.y = THREE.MathUtils.lerp(playerVisual.position.y, 0, delta * 10);
     legs[0].rotation.x = THREE.MathUtils.lerp(legs[0].rotation.x, 0, delta * 10);
     legs[1].rotation.x = THREE.MathUtils.lerp(legs[1].rotation.x, 0, delta * 10);
     const nearest = nearestTreeInRange();
     if (nearest) {
-      choppingTree = nearest;
       const direction = nearest.group.position.clone().sub(player.position);
       const targetRotation = Math.atan2(-direction.x, -direction.z);
       let difference = targetRotation - playerRotation;
@@ -845,39 +888,49 @@ const updatePlayer = (delta: number) => {
       playerRotation += difference * Math.min(1, delta * 12);
       player.rotation.y = playerRotation;
       chopClock += delta;
-      if (chopClock >= 0.62) {
-        chopClock = 0;
+      const chopRatio = Math.min(1, chopClock / chopDuration);
+      chopProgress.visible = true;
+      chopProgress.position.copy(player.position).add(new THREE.Vector3(0, 2.18, 0));
+      chopProgress.quaternion.copy(camera.quaternion);
+      chopProgressFill.scale.x = Math.max(0.001, chopRatio);
+      chopProgressFill.position.x = -0.51 * (1 - chopRatio);
+      if (chopRatio < 0.65) {
+        axePivot.rotation.z = THREE.MathUtils.lerp(0.35, 0.98, easeInOutCubic(chopRatio / 0.65));
+      } else {
+        axePivot.rotation.z = THREE.MathUtils.lerp(0.98, -1.22, easeInOutCubic((chopRatio - 0.65) / 0.35));
+      }
+      if (chopClock >= chopDuration) {
+        chopClock -= chopDuration;
         hitTree(nearest);
       }
     } else {
-      choppingTree = null;
       chopClock = 0;
+      chopProgress.visible = false;
+      axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, 0.35, delta * 12);
     }
   }
 
   const stackSway = isMoving ? -0.1 : 0.025;
   stackGroup.rotation.x = THREE.MathUtils.lerp(stackGroup.rotation.x, stackSway, delta * 7);
 
-  if (axeSwinging) {
-    axeSwingProgress += delta / 0.28;
-    axePivot.rotation.z = 0.35 - Math.sin(Math.min(axeSwingProgress, 1) * Math.PI) * 1.65;
-    if (axeSwingProgress >= 1) {
-      axeSwinging = false;
-      axePivot.rotation.z = 0.35;
-    }
-  }
 };
 
-const updateCollection = () => {
-  for (const log of [...groundLogs]) {
-    if (!log.collecting && log.mesh.position.distanceTo(player.position) < 1.45) collectLog(log);
-  }
+let collectionCooldown = 0;
+const updateCollection = (delta: number) => {
+  collectionCooldown = Math.max(0, collectionCooldown - delta);
+  if (collectionCooldown > 0 || groundLogs.some((log) => log.collecting)) return;
+  const nextLog = groundLogs
+    .filter((log) => log.settled && !log.collecting && log.mesh.position.distanceTo(player.position) < 1.65)
+    .sort((a, b) => a.mesh.position.distanceToSquared(player.position) - b.mesh.position.distanceToSquared(player.position))[0];
+  if (!nextLog) return;
+  collectLog(nextLog);
+  collectionCooldown = 0.12;
 };
 
 const updateStations = (delta: number) => {
   let nearest: StationData | null = null;
   for (const station of stations) {
-    if (station.position.distanceTo(player.position) < 2.35) {
+    if (station.position.distanceTo(player.position) < 3.05) {
       nearest = station;
       break;
     }
@@ -905,15 +958,16 @@ const updateBuildZones = (delta: number) => {
   for (const zone of buildZones) {
     if (zone.built) continue;
     const distance = zone.position.distanceTo(player.position);
-    const ring = zone.group.getObjectByName('ring');
-    if (ring) ring.rotation.z += delta * 0.35;
     if (distance < 1.45 && zone.paid < zone.cost && state.gold > 0) {
       zone.paymentClock += delta;
       if (zone.paymentClock >= 0.32) {
         zone.paymentClock = 0;
         state.gold -= 1;
         zone.paid += 1;
-        updateSpriteText(zone.label, `● ${zone.paid}/${zone.cost}`);
+        const ratio = zone.paid / zone.cost;
+        zone.progressFill.scale.x = Math.max(0.001, ratio);
+        zone.progressFill.position.x = -1.335 * (1 - ratio);
+        updateSpriteText(zone.label, `STATION · ${zone.paid}/${zone.cost} · GOLD`, '#ffe071');
         bounceGroup(zone.group);
         updateUI();
         if (zone.paid >= zone.cost) finishBuildZone(zone);
@@ -927,7 +981,7 @@ const updateBuildZones = (delta: number) => {
 const updateContextHint = () => {
   let message = '';
   const nearbyZone = buildZones.find((zone) => !zone.built && zone.position.distanceTo(player.position) < 1.8);
-  const nearbyStation = stations.find((station) => station.position.distanceTo(player.position) < 2.5);
+  const nearbyStation = stations.find((station) => station.position.distanceTo(player.position) < 3.15);
   const nearbyGroundLog = groundLogs.some((log) => !log.collecting && log.mesh.position.distanceTo(player.position) < 1.6);
   if (nearbyZone) {
     message = nearbyZone.paid >= nearbyZone.cost
@@ -939,8 +993,6 @@ const updateContextHint = () => {
     message = 'Odunlar istasyona bırakılıyor…';
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
     message = 'Taşıma kapasitesi dolu';
-  } else if (choppingTree) {
-    message = `Ağaç kesiliyor · ${choppingTree.hp}/3 can`;
   }
   actionHint.textContent = message;
   actionHint.classList.toggle('hidden', message.length === 0);
@@ -978,6 +1030,32 @@ const updateBillboards = () => {
   for (const tree of trees) tree.healthBar.quaternion.copy(camera.quaternion);
 };
 
+const occlusionRaycaster = new THREE.Raycaster();
+const updateTreeOcclusion = () => {
+  const playerFocus = player.position.clone().add(new THREE.Vector3(0, 1, 0));
+  const rayDirection = playerFocus.clone().sub(camera.position);
+  const playerDistance = rayDirection.length();
+  occlusionRaycaster.set(camera.position, rayDirection.normalize());
+  occlusionRaycaster.far = playerDistance - 0.35;
+  const occludingTrees = new Set<TreeData>();
+  for (const hit of occlusionRaycaster.intersectObjects(treeOccluderMeshes, false)) {
+    const tree = hit.object.userData.tree as TreeData | undefined;
+    if (tree?.alive) occludingTrees.add(tree);
+  }
+
+  for (const tree of trees) {
+    const shouldFade = tree.alive && occludingTrees.has(tree);
+    if (tree.group.userData.faded === shouldFade) continue;
+    tree.group.userData.faded = shouldFade;
+    tree.group.traverse((child) => {
+      if (!(child instanceof THREE.Mesh) || !child.userData.occludable) return;
+      const material = child.material as THREE.Material;
+      material.opacity = shouldFade ? 0.28 : 1;
+      material.depthWrite = !shouldFade;
+    });
+  }
+};
+
 const updateCamera = (delta: number) => {
   cameraTarget.lerp(player.position, 1 - Math.exp(-delta * 5));
   camera.position.copy(cameraTarget).add(cameraOffset);
@@ -1007,13 +1085,14 @@ const animate = () => {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
   updatePlayer(delta);
-  updateCollection();
+  updateCollection(delta);
   updateStations(delta);
   updateBuildZones(delta);
   updateOffer(delta);
   updateTweens(delta);
   updateCamera(delta);
   updateBillboards();
+  updateTreeOcclusion();
   updateContextHint();
 
   uiClock += delta;
