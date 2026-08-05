@@ -167,6 +167,8 @@ class AudioEngine {
   private context: AudioContext | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  private sfxLimiter: DynamicsCompressorNode | null = null;
+  private lastSfx = new Map<string, number>();
   private musicTimer: number | null = null;
   private musicStep = 0;
   musicLevel = Number(localStorage.getItem('forest-trader-music') ?? 55) / 100;
@@ -177,8 +179,14 @@ class AudioEngine {
       this.context = new AudioContext();
       this.musicGain = this.context.createGain();
       this.sfxGain = this.context.createGain();
+      this.sfxLimiter = this.context.createDynamicsCompressor();
+      this.sfxLimiter.threshold.value = -20;
+      this.sfxLimiter.knee.value = 8;
+      this.sfxLimiter.ratio.value = 12;
+      this.sfxLimiter.attack.value = 0.003;
+      this.sfxLimiter.release.value = 0.12;
       this.musicGain.connect(this.context.destination);
-      this.sfxGain.connect(this.context.destination);
+      this.sfxGain.connect(this.sfxLimiter).connect(this.context.destination);
       this.applyLevels();
     }
     if (this.context.state === 'suspended') await this.context.resume();
@@ -199,7 +207,16 @@ class AudioEngine {
   private applyLevels() {
     if (!this.context) return;
     this.musicGain?.gain.setTargetAtTime(this.musicLevel * 0.16, this.context.currentTime, 0.04);
-    this.sfxGain?.gain.setTargetAtTime(this.sfxLevel * 0.34, this.context.currentTime, 0.025);
+    this.sfxGain?.gain.setTargetAtTime(this.sfxLevel * 0.28, this.context.currentTime, 0.025);
+  }
+
+  private canPlay(key: string, cooldown: number) {
+    if (!this.context) return false;
+    const now = this.context.currentTime;
+    const lastPlayed = this.lastSfx.get(key) ?? -Infinity;
+    if (now - lastPlayed < cooldown) return false;
+    this.lastSfx.set(key, now);
+    return true;
   }
 
   private tone(frequency: number, duration: number, options: { type?: OscillatorType; gain?: number; slide?: number; delay?: number; target?: GainNode | null } = {}) {
@@ -237,29 +254,38 @@ class AudioEngine {
     source.start();
   }
 
-  button() { this.tone(520, 0.08, { type: 'sine', gain: 0.12, slide: 120 }); }
+  button() {
+    if (!this.canPlay('button', 0.08)) return;
+    this.tone(520, 0.08, { type: 'sine', gain: 0.12, slide: 120 });
+  }
   chop() {
+    if (!this.canPlay('chop', 0.11)) return;
     this.noise(0.09, 0.24, 1200);
     this.tone(105, 0.14, { type: 'triangle', gain: 0.3, slide: -34 });
     this.tone(740, 0.055, { type: 'square', gain: 0.045 });
   }
   treeFall() {
+    if (!this.canPlay('tree-fall', 0.45)) return;
     this.noise(0.48, 0.28, 520);
     this.tone(82, 0.5, { type: 'sawtooth', gain: 0.22, slide: -45 });
   }
   pickup() {
+    if (!this.canPlay('pickup', 0.18)) return;
     this.tone(440, 0.11, { gain: 0.15, slide: 180 });
     this.tone(710, 0.12, { gain: 0.1, delay: 0.075, slide: 80 });
   }
   logDrop(index = 0) {
+    if (!this.canPlay('log-drop', 0.11)) return;
     this.tone(145 + index * 18, 0.1, { type: 'triangle', gain: 0.17, slide: -35 });
     this.noise(0.055, 0.08, 420);
   }
   unload() {
+    if (!this.canPlay('unload', 0.13)) return;
     this.tone(190, 0.12, { type: 'triangle', gain: 0.23, slide: -45 });
     this.tone(330, 0.08, { gain: 0.08, delay: 0.045 });
   }
   coin() {
+    if (!this.canPlay('coin', 0.22)) return;
     this.tone(880, 0.1, { gain: 0.14 });
     this.tone(1320, 0.18, { gain: 0.12, delay: 0.08 });
   }
@@ -500,13 +526,47 @@ const makeDrinkMug = (visible = true) => {
   return mug;
 };
 
+const banknoteTexture = (() => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 192;
+  canvas.height = 112;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Canvas 2D context is unavailable.');
+  context.fillStyle = '#23b957';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = '#d9ffd9';
+  context.lineWidth = 9;
+  context.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+  context.fillStyle = '#0b7d3a';
+  context.beginPath();
+  context.ellipse(canvas.width / 2, canvas.height / 2, 48, 37, 0, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#f4ffd9';
+  context.font = 'bold 58px system-ui, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText('$', canvas.width / 2, canvas.height / 2 + 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  return texture;
+})();
+
 const makeBanknoteMesh = () => {
+  const group = new THREE.Group();
   const note = new THREE.Mesh(
-    new THREE.BoxGeometry(0.38, 0.045, 0.21),
-    new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.72 }),
+    new THREE.BoxGeometry(0.5, 0.055, 0.29),
+    new THREE.MeshStandardMaterial({ color: 0x20bf55, roughness: 0.68 }),
   );
   note.castShadow = true;
-  return note;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.47, 0.26),
+    new THREE.MeshBasicMaterial({ map: banknoteTexture, transparent: true }),
+  );
+  face.rotation.x = -Math.PI / 2;
+  face.position.y = 0.029;
+  group.add(note, face);
+  return group;
 };
 
 const player = new THREE.Group();
@@ -958,13 +1018,16 @@ const createTavern = (position: THREE.Vector3) => {
   const createTable = (x: number, z: number, visible: boolean) => {
     const tableGroup = new THREE.Group();
     tableGroup.position.set(x, 0, z);
+    // Referanstaki tezgâhlarla aynı diyagonalde okunması için uzun eksen ve
+    // oturma tarafı eski yerleşime göre çeyrek tur çevrilidir.
+    tableGroup.rotation.y = Math.PI / 2;
     tableGroup.visible = visible;
     addBox(tableGroup, new THREE.Vector3(1.45, 0.16, 0.9), new THREE.Vector3(0, 0.82, 0), counterMaterial);
     addBox(tableGroup, new THREE.Vector3(0.18, 0.76, 0.18), new THREE.Vector3(0, 0.4, 0), darkTrunkMaterial);
     addBox(tableGroup, new THREE.Vector3(0.72, 0.14, 0.64), new THREE.Vector3(0, 0.46, 0.92), floorAccentMaterial);
     addBox(tableGroup, new THREE.Vector3(0.14, 0.46, 0.14), new THREE.Vector3(0, 0.23, 0.92), darkTrunkMaterial);
     furnitureStage.add(tableGroup);
-    return { group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x, 0, z + 0.92)), occupied: false };
+    return { group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x + 0.92, 0, z)), occupied: false };
   };
 
   // Başlangıçta yalnızca bir masa işlevlidir. Diğerleri sırayla parayla kurulacaktır.
@@ -1075,8 +1138,8 @@ const createTavern = (position: THREE.Vector3) => {
     { center: toWorld(7.9, 3.82), halfX: 0.16, halfZ: 2.68, stage: 1 },
     { center: toWorld(-1.8, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
     { center: barrelPosition, halfX: 0.7, halfZ: 0.7, stage: 3 },
-    ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 })),
-    ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 })),
+    ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.56, halfZ: 0.83, stage: 3 })),
+    ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 })),
   ];
 
   tavern = {
@@ -1123,8 +1186,8 @@ const createTavern = (position: THREE.Vector3) => {
         addTween(0.58, (progress) => table.group.scale.setScalar(easeOutBack(progress)), () => table.group.scale.setScalar(1));
         tavern.tables.push(table);
         tavern.colliders.push(
-          { center: table.group.position.clone().add(position), halfX: 0.83, halfZ: 0.56, stage: 3 },
-          { center: table.group.position.clone().add(position).add(new THREE.Vector3(0, 0, 0.92)), halfX: 0.42, halfZ: 0.38, stage: 3 },
+          { center: table.group.position.clone().add(position), halfX: 0.56, halfZ: 0.83, stage: 3 },
+          { center: table.group.position.clone().add(position).add(new THREE.Vector3(0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 },
         );
         const nextZone = tavern.tableBuildZones[index + 1];
         if (nextZone) activateBuildZone(nextZone);
@@ -1265,7 +1328,7 @@ const animateMoneyToBuildZone = (zone: BuildZoneData) => {
   banknote.position.copy(start);
   banknote.rotation.set(0.12, player.rotation.y, 0.08);
   scene.add(banknote);
-  addTween(0.42, (progress) => {
+  addTween(0.18, (progress) => {
     banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
     banknote.position.y += Math.sin(progress * Math.PI) * 0.9;
     banknote.rotation.y += 0.26;
@@ -1284,7 +1347,7 @@ const animateWoodToBuildZone = (zone: BuildZoneData, start: THREE.Vector3) => {
   const target = zone.position.clone().add(new THREE.Vector3(0, 0.18, 0));
   flyingLog.position.copy(start);
   scene.add(flyingLog);
-  addTween(0.42, (progress) => {
+  addTween(0.18, (progress) => {
     flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
     flyingLog.position.y += Math.sin(progress * Math.PI) * 0.82;
     flyingLog.rotation.y = progress * 0.28;
@@ -1366,7 +1429,7 @@ const collectLog = (log: GroundLog) => {
   const start = log.mesh.position.clone();
   const startScale = log.mesh.scale.clone();
   const startRotation = log.mesh.rotation.clone();
-  addTween(0.48, (progress) => {
+  addTween(0.2, (progress) => {
     const target = new THREE.Vector3(0, 0.34 + stackIndex * 0.235, 0.75);
     player.localToWorld(target);
     const eased = easeOutCubic(progress);
@@ -1391,7 +1454,7 @@ const collectLog = (log: GroundLog) => {
 };
 
 const bounceGroup = (group: THREE.Object3D) => {
-  addTween(0.22, (progress) => {
+  addTween(0.14, (progress) => {
     const scale = 1 + Math.sin(progress * Math.PI) * 0.12;
     group.scale.set(scale, scale, scale);
   }, () => group.scale.setScalar(1));
@@ -1414,7 +1477,7 @@ const unloadOneLog = (station: StationData) => {
     0.42 + Math.floor(state.stock / 4) * 0.34,
     0.45,
   ));
-  addTween(0.34, (progress) => {
+  addTween(0.18, (progress) => {
     flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
     flyingLog.position.y += Math.sin(progress * Math.PI) * 0.95;
     flyingLog.rotation.y += 0.25;
@@ -1587,7 +1650,7 @@ const rebuildTavernResourcePiles = () => {
     const column = slot % 3;
     const row = Math.floor(slot / 3);
     const layer = Math.floor(index / 9);
-    note.position.set((column - 1) * 0.24, layer * 0.065, (row - 1) * 0.17);
+    note.position.set((column - 1) * 0.38, layer * 0.07, (row - 1) * 0.25);
     note.rotation.y = (column - 1) * 0.06 + (row - 1) * 0.025;
     tavern.paymentPile.add(note);
   }
@@ -1613,9 +1676,9 @@ const paymentWorldTarget = (index: number) => {
   const layer = Math.floor(index / 9);
   tavern.paymentPile.updateWorldMatrix(true, false);
   return tavern.paymentPile.localToWorld(new THREE.Vector3(
-    (column - 1) * 0.24,
-    layer * 0.065 + 0.04,
-    (row - 1) * 0.17,
+    (column - 1) * 0.38,
+    layer * 0.07 + 0.04,
+    (row - 1) * 0.25,
   ));
 };
 
@@ -1628,7 +1691,7 @@ const dropCustomerPayment = (position: THREE.Vector3, value: number) => {
     const target = paymentWorldTarget(existingNoteCount + index);
     banknote.position.copy(start);
     scene.add(banknote);
-    addTween(0.26 + index * 0.025, (progress) => {
+    addTween(0.18 + index * 0.018, (progress) => {
       banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
       banknote.position.y += Math.sin(progress * Math.PI) * 0.8;
       banknote.rotation.y += 0.28;
@@ -1670,7 +1733,7 @@ const collectProducedDrink = () => {
   flyingMug.position.copy(start);
   scene.add(flyingMug);
   const stackIndex = state.carriedDrinks + state.pendingDrinkCollection - 1;
-  addTween(0.22, (progress) => {
+  addTween(0.15, (progress) => {
     const target = new THREE.Vector3(0, 0.47 + stackIndex * 0.235, 0.75);
     player.localToWorld(target);
     flyingMug.position.lerpVectors(start, target, easeOutCubic(progress));
@@ -1702,7 +1765,7 @@ const deliverDrinkToCounter = () => {
   flyingMug.position.copy(start);
   scene.add(flyingMug);
   const target = counterDrinkWorldTarget(state.counterDrinks);
-  addTween(0.2, (progress) => {
+  addTween(0.14, (progress) => {
     flyingMug.position.lerpVectors(start, target, easeInOutCubic(progress));
     flyingMug.position.y += Math.sin(progress * Math.PI) * 0.72;
     flyingMug.rotation.y += 0.22;
@@ -1729,7 +1792,7 @@ const collectPayment = () => {
   banknote.position.copy(start);
   scene.add(banknote);
   const target = player.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-  addTween(0.18, (progress) => {
+  addTween(0.12, (progress) => {
     banknote.position.lerpVectors(start, target, easeInOutCubic(progress));
     banknote.position.y += Math.sin(progress * Math.PI) * 0.62;
     banknote.rotation.y += 0.28;
@@ -1764,7 +1827,7 @@ const updateTavernOperations = (delta: number) => {
     && state.barrelDrinks > 0
   ) {
     drinkPickupClock += delta;
-    if (drinkPickupClock >= 0.08 && !drinkCollecting) {
+    if (drinkPickupClock >= 0.06 && !drinkCollecting) {
       drinkPickupClock = 0;
       collectProducedDrink();
     }
@@ -1775,7 +1838,7 @@ const updateTavernOperations = (delta: number) => {
   const nearCounterDrop = tavern.drinkDropPosition.distanceTo(player.position) < 1.42;
   if (nearCounterDrop && state.carriedDrinks > 0) {
     drinkDropClock += delta;
-    if (drinkDropClock >= 0.08 && !drinkDelivering) {
+    if (drinkDropClock >= 0.06 && !drinkDelivering) {
       drinkDropClock = 0;
       deliverDrinkToCounter();
     }
@@ -1793,13 +1856,10 @@ const spawnTableTip = (table: TavernTable) => {
   group.position.copy(table.group.position.clone().add(tavern.position));
   group.position.y = 1.02;
   for (let index = 0; index < 2; index += 1) {
-    const note = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.035, 0.2),
-      new THREE.MeshStandardMaterial({ color: index === 0 ? 0x20bf55 : 0x65e883, roughness: 0.7 }),
-    );
+    const note = makeBanknoteMesh();
+    note.scale.setScalar(0.82);
     note.position.set((index - 0.5) * 0.11, index * 0.045, 0);
     note.rotation.y = (index - 0.5) * 0.22;
-    note.castShadow = true;
     group.add(note);
   }
   world.add(group);
@@ -1913,7 +1973,7 @@ const updateTips = () => {
     tip.collecting = true;
     const start = tip.group.position.clone();
     const target = player.position.clone().add(new THREE.Vector3(0, 1, 0));
-    addTween(0.36, (progress) => {
+    addTween(0.18, (progress) => {
       tip.group.position.lerpVectors(start, target, easeInOutCubic(progress));
       tip.group.position.y += Math.sin(progress * Math.PI) * 0.65;
     }, () => {
@@ -1942,7 +2002,7 @@ const deliverLogToTavern = () => {
   flyingLog.position.copy(start);
   scene.add(flyingLog);
   const target = tavern.deliveryPosition.clone().add(new THREE.Vector3(0, 0.18, 0));
-  addTween(0.34, (progress) => {
+  addTween(0.18, (progress) => {
     flyingLog.position.lerpVectors(start, target, easeInOutCubic(progress));
     flyingLog.position.y += Math.sin(progress * Math.PI) * 0.9;
     flyingLog.rotation.y += 0.28;
@@ -1965,7 +2025,7 @@ const updateTavern = (delta: number) => {
   }
   if (tavern.deliveryPosition.distanceTo(player.position) < 1.85 && state.carried > 0 && !tavern.delivering) {
     tavern.deliveryClock += delta;
-    if (tavern.deliveryClock >= 0.18) {
+    if (tavern.deliveryClock >= 0.08) {
       tavern.deliveryClock = 0;
       deliverLogToTavern();
     }
@@ -2305,7 +2365,7 @@ const updateCollection = (delta: number) => {
     .sort((a, b) => a.mesh.position.distanceToSquared(player.position) - b.mesh.position.distanceToSquared(player.position))[0];
   if (!nextLog) return;
   collectLog(nextLog);
-  collectionCooldown = 0.12;
+  collectionCooldown = 0.07;
 };
 
 const updateStations = (delta: number) => {
@@ -2318,7 +2378,7 @@ const updateStations = (delta: number) => {
   }
   if (nearest && state.carried > 0) {
     unloadClock += delta;
-    if (unloadClock >= 0.2) {
+    if (unloadClock >= 0.08) {
       unloadClock = 0;
       unloadOneLog(nearest);
     }
@@ -2343,7 +2403,7 @@ const updateBuildZones = (delta: number) => {
     const distance = zone.position.distanceTo(player.position);
     if (distance < 1.45 && zone.paid < zone.cost.amount && resourceAmount(zone.cost.type) > 0) {
       zone.paymentClock += delta;
-      if (zone.paymentClock >= 0.32) {
+      if (zone.paymentClock >= 0.1) {
         zone.paymentClock = 0;
         if (zone.cost.type === 'money') {
           state.gold -= 1;
