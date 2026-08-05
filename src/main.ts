@@ -63,9 +63,6 @@ interface TavernData {
   entrancePosition: THREE.Vector3;
   exitPosition: THREE.Vector3;
   queueOrigin: THREE.Vector3;
-  serviceCenter: THREE.Vector3;
-  serviceHalfX: number;
-  serviceHalfZ: number;
   tables: TavernTable[];
   tableBuildZones: BuildZoneData[];
   colliders: TavernCollider[];
@@ -294,7 +291,9 @@ renderer.toneMappingExposure = 1.08;
 gameRoot.appendChild(renderer.domElement);
 
 const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
-const cameraOffset = new THREE.Vector3(10, 16, 13);
+// Yukarıdan fakat yandan çapraz olmayan görünüş: X ekseninde sapma yoktur,
+// bu yüzden yol ve bina kenarları ekranda düz kalırken nesnelerin yüksekliği okunur.
+const cameraOffset = new THREE.Vector3(0, 18, 14);
 const cameraTarget = new THREE.Vector3();
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
@@ -363,7 +362,7 @@ world.add(ground);
 const pathMaterial = new THREE.MeshStandardMaterial({ color: 0xcfa365, roughness: 1 });
 const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 68), pathMaterial);
 mainPath.rotation.x = -Math.PI / 2;
-mainPath.rotation.z = -0.13;
+mainPath.rotation.z = 0;
 mainPath.position.y = 0.012;
 mainPath.receiveShadow = true;
 world.add(mainPath);
@@ -430,8 +429,6 @@ const state = {
 
 let tavern: TavernData;
 let customerSpawnClock = 0;
-let drinkFillClock = 0;
-let playerHasDrink = false;
 
 const offer: OfferData = {
   wood: 8,
@@ -529,22 +526,6 @@ const toolHand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMater
 toolHand.position.set(-0.56, 0.91, -0.12);
 toolHand.castShadow = true;
 playerVisual.add(toolHand);
-
-const carriedMug = new THREE.Group();
-const carriedMugBody = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.105, 0.09, 0.25, 9),
-  new THREE.MeshStandardMaterial({ color: 0xe8d2a4, roughness: 0.75 }),
-);
-carriedMugBody.position.y = 0.12;
-const carriedDrink = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.088, 0.088, 0.018, 9),
-  new THREE.MeshStandardMaterial({ color: 0xc87826, roughness: 0.55 }),
-);
-carriedDrink.position.y = 0.25;
-carriedMug.add(carriedMugBody, carriedDrink);
-carriedMug.position.set(0.48, 1.03, -0.32);
-carriedMug.visible = false;
-player.add(carriedMug);
 
 const createCustomerVisual = (variant: number) => {
   const visual = new THREE.Group();
@@ -899,18 +880,6 @@ const createTavern = (position: THREE.Vector3) => {
   addBox(entranceStage, new THREE.Vector3(1.02, 0.18, 5.45), new THREE.Vector3(-2.8, 1.27, -3.35), floorAccentMaterial);
   addBox(entranceStage, new THREE.Vector3(0.12, 0.82, 2.35), new THREE.Vector3(-7.65, 1.78, -3.35), plasterMaterial);
 
-  // Tezgâh geriye çekilmedi; tersine salon tarafına alındı ve arkasında geniş bir çalışma koridoru bırakıldı.
-  const serviceCenter = position.clone().add(new THREE.Vector3(-5.2, 0, -3.35));
-  const serviceHalfX = 1.9;
-  const serviceHalfZ = 2.65;
-  const serviceMark = new THREE.Mesh(
-    new THREE.PlaneGeometry(serviceHalfX * 2, serviceHalfZ * 2),
-    new THREE.MeshBasicMaterial({ color: 0xf3df9a, transparent: true, opacity: 0.3, side: THREE.DoubleSide }),
-  );
-  serviceMark.rotation.x = -Math.PI / 2;
-  serviceMark.position.set(-5.2, 0.215, -3.35);
-  entranceStage.add(serviceMark);
-
   const furnitureStage = new THREE.Group();
   const tables: TavernTable[] = [];
   const createTable = (x: number, z: number, visible: boolean) => {
@@ -933,7 +902,8 @@ const createTavern = (position: THREE.Vector3) => {
     createTable(4.2, 4.5, false),
   ];
 
-  // Fıçı, içecek alınan gerçek etkileşim noktasıdır.
+  // Fıçı şimdilik otomatik servisin görsel kaynağıdır. İleride stok,
+  // içecek çeşidi ve barmen geliştirmeleri bu nesneye bağlanabilir.
   const barrelPosition = position.clone().add(new THREE.Vector3(-5.6, 0, -1.05));
   const barrel = new THREE.Group();
   barrel.position.copy(group.worldToLocal(barrelPosition.clone()));
@@ -1017,20 +987,19 @@ const createTavern = (position: THREE.Vector3) => {
     entrancePosition: toWorld(8.15, 0),
     exitPosition: toWorld(10.2, -7.8),
     queueOrigin: toWorld(-1.7, -3.35),
-    serviceCenter,
-    serviceHalfX,
-    serviceHalfZ,
     tables,
     tableBuildZones: [],
     colliders,
   };
 
   const tableCosts = [8, 14, 22];
+  // Satın alma alanı kurulacak masanın altında değildir. Tüm masa
+  // geliştirmeleri servis tezgâhından ve müşteri rotasından uzak, tek bir
+  // yükseltme noktasında sırayla gösterilir.
+  const tableBuildPosition = position.clone().add(new THREE.Vector3(5.55, 0.2, -4.75));
   tavern.tableBuildZones = futureTables.map((table, index) => {
-    const tableWorldPosition = table.group.position.clone().add(position);
-    tableWorldPosition.y = 0.2;
     return createBuildZone(
-      tableWorldPosition,
+      tableBuildPosition,
       new THREE.Vector3(),
       { type: 'money', amount: tableCosts[index] },
       () => {
@@ -1368,7 +1337,7 @@ const finishTavern = () => {
   if (firstTableZone) activateBuildZone(firstTableZone);
   customerSpawnClock = 3.2;
   audio.coin();
-  showToast('Taverna açıldı! Fıçıdan içecek al ve sıraya servis et.');
+  showToast('Taverna açıldı! Gelen müşterilere içecek otomatik servis edilir.');
 };
 
 const makeDrinkMug = () => {
@@ -1498,14 +1467,10 @@ const sendCustomerAway = (customer: CustomerData) => {
 
 const serveFrontCustomer = () => {
   const customer = customerQueue[0];
-  const inServiceArea = Math.abs(player.position.x - tavern.serviceCenter.x) <= tavern.serviceHalfX
-    && Math.abs(player.position.z - tavern.serviceCenter.z) <= tavern.serviceHalfZ;
   const customerAtCounter = customer
     ? customer.group.position.distanceToSquared(queueTarget(0)) < 0.42 * 0.42
     : false;
-  if (!customer || !playerHasDrink || !inServiceArea || !customerAtCounter) return;
-  playerHasDrink = false;
-  carriedMug.visible = false;
+  if (!customer || !customerAtCounter) return;
   customerQueue.shift();
   refreshQueue();
   customer.mug.visible = true;
@@ -1579,18 +1544,6 @@ const updateCustomers = (delta: number) => {
     }
   }
 
-  if (!playerHasDrink && player.position.distanceTo(tavern.barrelPosition) < 1.5) {
-    drinkFillClock += delta;
-    if (drinkFillClock >= 0.48) {
-      drinkFillClock = 0;
-      playerHasDrink = true;
-      carriedMug.visible = true;
-      audio.pickup();
-      showToast('İçecek hazır · sıranın başına götür');
-    }
-  } else {
-    drinkFillClock = 0;
-  }
   serveFrontCustomer();
 };
 
@@ -1862,8 +1815,8 @@ const getMovementInput = () => {
   return isPanelOpen() ? input.set(0, 0) : input;
 };
 
-const movementForward = new THREE.Vector3(-cameraOffset.x, 0, -cameraOffset.z).normalize();
-const movementRight = new THREE.Vector3(-movementForward.z, 0, movementForward.x);
+const movementForward = new THREE.Vector3(0, 0, -1);
+const movementRight = new THREE.Vector3(1, 0, 0);
 const desiredMovement = new THREE.Vector3();
 let playerRotation = 0;
 let walkTime = 0;
@@ -1937,7 +1890,7 @@ const updatePlayer = (delta: number) => {
     legs[1].rotation.x = THREE.MathUtils.lerp(legs[1].rotation.x, 0, delta * 10);
   }
 
-  const nearest = playerHasDrink ? null : nearestTreeInRange();
+  const nearest = nearestTreeInRange();
   axePivot.visible = nearest !== null;
   if (nearest) {
     if (!isMoving) {
@@ -2063,14 +2016,7 @@ const updateContextHint = () => {
       ? `İnşa ediliyor · ${nearbyBuildZone.paid}/${nearbyBuildZone.cost.amount} ${resourceName}`
       : `${nearbyBuildZone.cost.amount - nearbyBuildZone.paid} ${resourceName} gerekli`;
   } else if (tavern.completed && tavern.barrelPosition.distanceTo(player.position) < 1.8) {
-    message = playerHasDrink ? 'Elinde bir içecek var · sıranın başına götür' : 'Fıçıdan içecek dolduruluyor';
-  } else if (
-    tavern.completed
-    && customerQueue[0]
-    && Math.abs(player.position.x - tavern.serviceCenter.x) <= tavern.serviceHalfX + 0.25
-    && Math.abs(player.position.z - tavern.serviceCenter.z) <= tavern.serviceHalfZ + 0.25
-  ) {
-    message = playerHasDrink ? 'İçecek servis ediliyor' : 'Önce fıçıdan içecek al';
+    message = 'Fıçı müşterilere otomatik servis sağlıyor';
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
     message = 'Taşıma kapasitesi dolu';
   }
