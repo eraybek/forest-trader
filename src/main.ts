@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { findClip, instantiate, loadModels } from './models';
 import './style.css';
 
 type SkillKind = 'damage' | 'axeSpeed' | 'capacity' | 'speed' | 'haggle';
@@ -89,6 +90,7 @@ interface CustomerData {
   walkClock: number;
   bubble: THREE.Sprite;
   served: boolean;
+  currentClip: string;
 }
 
 interface TweenData {
@@ -328,6 +330,10 @@ scene.add(sun);
 const world = new THREE.Group();
 scene.add(world);
 
+// Sahne kurulmadan önce tüm modeller belleğe alınır; aşağıdaki dünya kurulumu
+// bunlara senkron erişebilsin diye modül seviyesinde bekleniyor.
+await loadModels();
+
 interface BirdData {
   group: THREE.Group;
   speed: number;
@@ -380,27 +386,56 @@ mainPath.position.y = 0.012;
 mainPath.receiveShadow = true;
 world.add(mainPath);
 
-// Üs yolun batı yakasında toplanır: takas tezgâhı yola bakar, kütük bırakma
-// istasyonu onun biraz kuzeyindedir. Tek üs, tek istasyon.
-const traderPosition = new THREE.Vector3(-7.6, 0, 2.6);
-const stationBuildPosition = new THREE.Vector3(-7.6, 0, -3.6);
+// Tüm oyun yolun batısındaki çevrili arazide geçer. Oyuncu araziden hiç
+// çıkmaz; alıcılar yoldan gelip yalnızca tezgâhın dış yüzüne kadar
+// yaklaşabilir. Çit bu iki tarafı ayıran tek sınırdır.
+const COMPOUND_EAST = -5;
+const COMPOUND_WEST = -19.5;
+const COUNTER_WIDTH = 3.2;
 
-// Tezgâhın önünü ana yola bağlayan kısa giriş parçası.
-const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 4.4), pathMaterial);
+// Arazi z ekseninde parçalara bölünür; başta yalnızca ilk parça açıktır ve
+// para biriktikçe kuzeye/güneye doğru yeni orman parçaları satın alınır.
+interface PlotData {
+  minZ: number;
+  maxZ: number;
+  tier: number;
+  unlocked: boolean;
+  cost: number;
+  fences: THREE.Group[];
+  trees: TreeData[];
+}
+
+const plots: PlotData[] = [
+  { minZ: -9, maxZ: 9, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
+  { minZ: 9, maxZ: 25, tier: 1, unlocked: false, cost: 120, fences: [], trees: [] },
+  { minZ: -25, maxZ: -9, tier: 2, unlocked: false, cost: 320, fences: [], trees: [] },
+];
+
+const traderPosition = new THREE.Vector3(COMPOUND_EAST, 0, 0);
+const stationBuildPosition = new THREE.Vector3(-13.4, 0, 4.6);
+const sawmillBuildPosition = new THREE.Vector3(-13.4, 0, -4.6);
+const clerkBuildPosition = new THREE.Vector3(-8.2, 0, 0);
+
+// Alıcıların tezgâha yanaştığı kısa toprak alan; yolun batı kenarına bağlanır.
+const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.2), pathMaterial);
 traderPath.rotation.x = -Math.PI / 2;
-traderPath.position.set(-3.6, 0.018, 2.6);
+traderPath.position.set(COMPOUND_EAST + 1.9, 0.018, 0);
 traderPath.receiveShadow = true;
 world.add(traderPath);
 
+// Arazi zemini: çitin içi otlak olarak biraz daha koyu okunur.
+const compoundGround = new THREE.Mesh(
+  new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 50),
+  new THREE.MeshStandardMaterial({ color: 0x6fa348, roughness: 1 }),
+);
+compoundGround.rotation.x = -Math.PI / 2;
+compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
+compoundGround.receiveShadow = true;
+world.add(compoundGround);
+
 const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x9f5c2d, roughness: 0.85 });
 const woodEndMaterial = new THREE.MeshStandardMaterial({ color: 0xe1ad63, roughness: 0.9 });
-const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x795029, roughness: 1 });
 const darkTrunkMaterial = new THREE.MeshStandardMaterial({ color: 0x573a22, roughness: 1 });
-const leafMaterials = [
-  new THREE.MeshStandardMaterial({ color: 0x2d7a3d, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x3f9142, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x58a847, roughness: 1 }),
-];
 const treeRangeFillGeometry = new THREE.CircleGeometry(2.02, 40);
 const treeRangeOutlineGeometry = new THREE.RingGeometry(1.93, 2.02, 40);
 const treeRangeFillMaterial = new THREE.MeshBasicMaterial({
@@ -516,99 +551,69 @@ const makeBanknoteMesh = () => {
 };
 
 const player = new THREE.Group();
-player.position.set(0, 0, -2);
+// Oyuncu arazinin içinde, tezgâhın hemen batısında başlar.
+player.position.set(-8, 0, 2);
 scene.add(player);
 
-const playerVisual = new THREE.Group();
+// Oyuncu artık animasyonlu bir GLB. Yürüme/kesme/taşıma durumları klipler
+// arasında yumuşak geçişle sürülüyor.
+const PLAYER_HEIGHT = 1.62;
+const playerVisual = instantiate('player', PLAYER_HEIGHT);
 player.add(playerVisual);
 
-const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0xeda948, roughness: 0.8 });
-const pantsMaterial = new THREE.MeshStandardMaterial({ color: 0x31524b, roughness: 0.9 });
-const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd79b67, roughness: 0.85 });
-const hairMaterial = new THREE.MeshStandardMaterial({ color: 0x493022, roughness: 1 });
+const playerMixer = new THREE.AnimationMixer(playerVisual);
+const playerActions = new Map<string, THREE.AnimationAction>();
+const playerAction = (clipName: string) => {
+  const existing = playerActions.get(clipName);
+  if (existing) return existing;
+  const clip = findClip('player', clipName);
+  const action = playerMixer.clipAction(clip);
+  playerActions.set(clipName, action);
+  return action;
+};
 
-const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.52, 5, 9), shirtMaterial);
-body.position.y = 0.92;
-body.castShadow = true;
-playerVisual.add(body);
+let currentPlayerClip = '';
+const playPlayerClip = (clipName: string, fade = 0.18) => {
+  if (currentPlayerClip === clipName) return;
+  const next = playerAction(clipName);
+  const previous = currentPlayerClip ? playerAction(currentPlayerClip) : null;
+  next.reset().setEffectiveWeight(1).fadeIn(fade).play();
+  previous?.fadeOut(fade);
+  currentPlayerClip = clipName;
+};
+playPlayerClip('idle', 0);
 
-const legs = [-0.17, 0.17].map((x) => {
-  const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.32, 4, 7), pantsMaterial);
-  leg.position.set(x, 0.37, 0);
-  leg.castShadow = true;
-  playerVisual.add(leg);
-  return leg;
-});
+// Balta karakterin sağ eline takılır; yetenek yükseltilince modeli değişir.
+const axeHolder = new THREE.Group();
+let axeModel = instantiate('axe', 0.62);
+axeHolder.add(axeModel);
+axeHolder.visible = false;
 
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 9), skinMaterial);
-head.position.y = 1.58;
-head.castShadow = true;
-playerVisual.add(head);
+const playerHand = (() => {
+  let found: THREE.Object3D | null = null;
+  playerVisual.traverse((child) => {
+    if (found) return;
+    if (/hand/i.test(child.name) && /r/i.test(child.name)) found = child;
+  });
+  return found;
+})();
+if (playerHand) (playerHand as THREE.Object3D).add(axeHolder);
+else player.add(axeHolder);
 
-const hair = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.54), hairMaterial);
-hair.position.y = 1.67;
-hair.rotation.x = 0.05;
-hair.castShadow = true;
-playerVisual.add(hair);
+const setAxeModel = (upgraded: boolean) => {
+  axeHolder.remove(axeModel);
+  axeModel = instantiate(upgraded ? 'axe-upgraded' : 'axe', 0.62);
+  axeHolder.add(axeModel);
+};
 
-const axePivot = new THREE.Group();
-axePivot.position.set(-0.57, 1.04, -0.12);
-playerVisual.add(axePivot);
-const axeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.74, 6), trunkMaterial);
-axeHandle.position.y = -0.23;
-axeHandle.castShadow = true;
-axePivot.add(axeHandle);
-const axeHead = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.12), new THREE.MeshStandardMaterial({ color: 0x9ba7a5, roughness: 0.55, metalness: 0.25 }));
-axeHead.position.set(0.12, 0.13, 0);
-axeHead.rotation.z = -0.24;
-axeHead.castShadow = true;
-axePivot.add(axeHead);
-const axeRestAngle = 0.32;
-const axeWindupAngle = 1.52;
-const axeStrikeAngle = -1.48;
-axePivot.rotation.z = axeRestAngle;
-axePivot.visible = false;
-
-const toolArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.34, 4, 7), skinMaterial);
-toolArm.position.set(-0.39, 1.04, -0.1);
-toolArm.rotation.z = -0.38;
-toolArm.castShadow = true;
-playerVisual.add(toolArm);
-
-const toolHand = new THREE.Mesh(new THREE.SphereGeometry(0.105, 8, 6), skinMaterial);
-toolHand.position.set(-0.56, 0.91, -0.12);
-toolHand.castShadow = true;
-playerVisual.add(toolHand);
+const BUYER_MODELS = ['buyer-b', 'buyer-c', 'buyer-d', 'buyer-e', 'buyer-f', 'buyer-g'] as const;
 
 const createCustomerVisual = (variant: number) => {
-  const visual = new THREE.Group();
-  const shirts = [0x6d8fc7, 0xb8674d, 0x6c9c63, 0x9b6ca8, 0xc99845, 0x4f8d8a];
-  const trousers = [0x34485b, 0x4d4138, 0x384b3d, 0x463c57];
-  const skins = [0xd79b67, 0xbd7d50, 0xe0aa78, 0x9d643f];
-  const hairs = [0x493022, 0x2f241e, 0x7b4c26, 0x191817];
-  const customerShirt = new THREE.MeshStandardMaterial({ color: shirts[variant % shirts.length], roughness: 0.85 });
-  const customerPants = new THREE.MeshStandardMaterial({ color: trousers[variant % trousers.length], roughness: 0.9 });
-  const customerSkin = new THREE.MeshStandardMaterial({ color: skins[variant % skins.length], roughness: 0.85 });
-  const customerHair = new THREE.MeshStandardMaterial({ color: hairs[variant % hairs.length], roughness: 1 });
-  const customerBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.52, 5, 9), customerShirt);
-  customerBody.position.y = 0.92;
-  customerBody.castShadow = true;
-  visual.add(customerBody);
-  for (const x of [-0.17, 0.17]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.32, 4, 7), customerPants);
-    leg.position.set(x, 0.37, 0);
-    leg.castShadow = true;
-    leg.userData.walkLeg = x < 0 ? -1 : 1;
-    visual.add(leg);
-  }
-  const customerHead = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 9), customerSkin);
-  customerHead.position.y = 1.58;
-  customerHead.castShadow = true;
-  visual.add(customerHead);
-  const customerHairMesh = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 7, 0, Math.PI * 2, 0, Math.PI * 0.54), customerHair);
-  customerHairMesh.position.y = 1.67;
-  customerHairMesh.castShadow = true;
-  visual.add(customerHairMesh);
+  const name = BUYER_MODELS[Math.abs(variant) % BUYER_MODELS.length];
+  const visual = instantiate(name, PLAYER_HEIGHT);
+  const mixer = new THREE.AnimationMixer(visual);
+  visual.userData.mixer = mixer;
+  visual.userData.modelName = name;
   return visual;
 };
 
@@ -639,12 +644,9 @@ const forestTiers = [
   { hp: 10, logs: 5, value: 7 },
 ];
 
-const tierForDistance = (distance: number) => (distance > 30 ? 2 : distance > 18 ? 1 : 0);
-
 const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeData => {
   const group = new THREE.Group();
   group.position.copy(position);
-  group.scale.setScalar(1 + tier * 0.1);
 
   const rangeIndicator = new THREE.Group();
   rangeIndicator.position.copy(position);
@@ -657,29 +659,13 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
   rangeIndicator.add(rangeFill, rangeOutline);
   world.add(rangeIndicator);
 
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.38, 2.35, 7), trunkMaterial.clone());
-  trunk.position.y = 1.15;
-  trunk.castShadow = true;
-  trunk.receiveShadow = true;
+  // Kademe hem modeli hem boyu değiştirir; derin orman gözle ayırt edilir.
+  const trunk = instantiate(TIER_MODELS[tier], TIER_HEIGHTS[tier]);
+  trunk.rotation.y = variant * 1.7;
   group.add(trunk);
 
-  const leafMaterial = leafMaterials[variant % leafMaterials.length].clone();
-  // Derin orman gözle ayırt edilebilsin diye yapraklar kademeyle koyulaşır.
-  if (tier > 0) leafMaterial.color.multiplyScalar(1 - tier * 0.14);
-  const layerData = [
-    { y: 1.75, radius: 1.12, height: 1.85 },
-    { y: 2.45, radius: 0.9, height: 1.65 },
-    { y: 3.05, radius: 0.64, height: 1.45 },
-  ];
-  for (const layer of layerData) {
-    const leaves = new THREE.Mesh(new THREE.ConeGeometry(layer.radius, layer.height, 8), leafMaterial);
-    leaves.position.y = layer.y;
-    leaves.castShadow = true;
-    group.add(leaves);
-  }
-
   const healthBar = new THREE.Group();
-  healthBar.position.set(0, 4.05, 0);
+  healthBar.position.set(0, TIER_HEIGHTS[tier] + 0.5, 0);
   healthBar.visible = false;
   const barBack = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.18), new THREE.MeshBasicMaterial({ color: 0x3b2f23 }));
   const barFill = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.11), new THREE.MeshBasicMaterial({ color: 0xf1cc45 }));
@@ -918,46 +904,38 @@ const createBuildZone = (
 // Referans görseldeki pazar tezgâhı: tenteli ahşap kulübe, yola bakan açık bir
 // satış yüzü ve önünde alıcıların dizildiği boş alan. Tavernanın aksine
 // aşamalı kurulmaz — üs oyunun başından beri buradan işler.
+// Takas tezgâhı çitin üstünde bir sınırdır: oyuncu batı (iç) yüzünde durur,
+// alıcılar doğu (yol) yüzüne gelir. Üstten bakışta hiçbir şeyi örtmemesi için
+// bilerek çatısızdır — girilebilen hiçbir yapıya çatı koymuyoruz.
 const createTradingPost = (position: THREE.Vector3): TraderPost => {
   const group = new THREE.Group();
   group.position.copy(position);
 
-  const deckMaterial = new THREE.MeshStandardMaterial({ color: 0xc9a065, roughness: 0.95 });
   const counterMaterial = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.85 });
-  const awningMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8a63, roughness: 0.9 });
-  const clothMaterial = new THREE.MeshStandardMaterial({ color: 0x3b6b4b, roughness: 0.95 });
+  const topMaterial = new THREE.MeshStandardMaterial({ color: 0xc9a065, roughness: 0.9 });
 
-  // Zemin, oyuncu takılmasın diye bir basamak yüksekliğinde tutulur.
-  addBox(group, new THREE.Vector3(3.0, 0.1, 4.6), new THREE.Vector3(0, 0.05, 0), deckMaterial);
+  // Tezgâh gövdesi ve üst tablası; çit hattı boyunca uzanır. Alçak tutulur ki
+  // üstten bakışta arkasındaki oyuncuyu ve alıcıları kapatmasın.
+  addBox(group, new THREE.Vector3(0.5, 0.78, COUNTER_WIDTH), new THREE.Vector3(0, 0.39, 0), counterMaterial);
+  addBox(group, new THREE.Vector3(0.94, 0.14, COUNTER_WIDTH + 0.36), new THREE.Vector3(0, 0.85, 0), topMaterial);
 
-  // Satış tezgâhı: açık yüzü yola, yani +x yönüne bakar.
-  addBox(group, new THREE.Vector3(0.5, 0.86, 4.3), new THREE.Vector3(1.2, 0.53, 0), counterMaterial);
-  addBox(group, new THREE.Vector3(0.72, 0.14, 4.5), new THREE.Vector3(1.2, 1.02, 0), deckMaterial);
-
-  for (const z of [-2.05, 2.05]) {
-    addBox(group, new THREE.Vector3(0.18, 2.45, 0.18), new THREE.Vector3(1.35, 1.22, z), darkTrunkMaterial);
-    addBox(group, new THREE.Vector3(0.18, 2.45, 0.18), new THREE.Vector3(-1.35, 1.22, z), darkTrunkMaterial);
+  // Tezgâhın iki ucundaki kısa direkler, çite bağlandığını okutur.
+  for (const z of [-(COUNTER_WIDTH / 2) - 0.2, COUNTER_WIDTH / 2 + 0.2]) {
+    addBox(group, new THREE.Vector3(0.22, 1.16, 0.22), new THREE.Vector3(0, 0.58, z), darkTrunkMaterial);
   }
-  addBox(group, new THREE.Vector3(3.4, 0.16, 4.9), new THREE.Vector3(0, 2.5, 0), awningMaterial).rotation.z = 0.06;
-  addBox(group, new THREE.Vector3(0.14, 0.44, 4.9), new THREE.Vector3(1.74, 2.28, 0), clothMaterial);
 
-  // Arka raf ve sandık, tezgâhın dolu görünmesi için.
-  addBox(group, new THREE.Vector3(0.42, 0.12, 4.0), new THREE.Vector3(-1.2, 0.92, 0), counterMaterial);
-  addBox(group, new THREE.Vector3(0.42, 0.12, 4.0), new THREE.Vector3(-1.2, 1.5, 0), counterMaterial);
-  addBox(group, new THREE.Vector3(0.62, 0.5, 0.72), new THREE.Vector3(-0.85, 0.35, -1.6), counterMaterial);
-
-  // Tezgâhta sergilenen satılık kütükler.
+  // Tezgâhta sergilenen satılık mal.
   const stockPile = new THREE.Group();
-  stockPile.position.set(1.2, 1.09, 0);
+  stockPile.position.set(0, 0.93, 0);
   group.add(stockPile);
 
-  // Oyuncunun satışı tetiklemek için üzerinde durduğu halka.
+  // Oyuncunun satışı tetiklemek için durduğu halka (iç taraf).
   const sellRing = new THREE.Mesh(
-    new THREE.RingGeometry(1.02, 1.24, 36),
+    new THREE.RingGeometry(1.0, 1.22, 36),
     new THREE.MeshBasicMaterial({ color: 0x8fe06a, transparent: true, opacity: 0.68, side: THREE.DoubleSide }),
   );
   sellRing.rotation.x = -Math.PI / 2;
-  sellRing.position.set(-0.25, 0.12, 0);
+  sellRing.position.set(-1.5, 0.05, 0);
   group.add(sellRing);
 
   world.add(group);
@@ -965,15 +943,14 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
   return {
     group,
     position: position.clone(),
-    sellPosition: position.clone().add(new THREE.Vector3(-0.25, 0, 0)),
+    sellPosition: position.clone().add(new THREE.Vector3(-1.5, 0, 0)),
     stockPile,
-    // Alıcılar tezgâhın yol tarafında, tek sıra hâlinde bekler.
-    slots: [-1.3, 0, 1.3].map((z) => position.clone().add(new THREE.Vector3(2.5, 0, z))),
-    spawnPosition: new THREE.Vector3(1.6, 0, 15),
-    exitPosition: new THREE.Vector3(1.6, 0, 17),
+    // Alıcılar tezgâhın yol tarafında, çitin dışında bekler.
+    slots: [-1.25, 0, 1.25].map((z) => position.clone().add(new THREE.Vector3(1.5, 0, z))),
+    spawnPosition: new THREE.Vector3(1.8, 0, 15),
+    exitPosition: new THREE.Vector3(1.8, 0, 17),
     colliders: [
-      { center: position.clone().add(new THREE.Vector3(1.2, 0, 0)), halfX: 0.32, halfZ: 2.2 },
-      { center: position.clone().add(new THREE.Vector3(-1.2, 0, 0)), halfX: 0.32, halfZ: 2.05 },
+      { center: position.clone(), halfX: 0.45, halfZ: COUNTER_WIDTH / 2 + 0.3 },
     ],
   };
 };
@@ -1004,83 +981,119 @@ const seededRandom = (() => {
 })();
 
 // Üs merkezi: ağaç kademeleri bu noktaya olan uzaklığa göre belirlenir.
-const basePosition = new THREE.Vector3(-7.6, 0, -0.5);
-
-const insideBase = (position: THREE.Vector3) =>
-  position.x > -12.6 && position.x < -2.6 && position.z > -7.6 && position.z < 7.6;
+// Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
+const buildingSpots = [stationBuildPosition, sawmillBuildPosition, clerkBuildPosition];
 
 const isClearForTree = (position: THREE.Vector3) => {
-  if (Math.abs(position.x) < 4.6) return false;
-  if (insideBase(position)) return false;
-  if (position.distanceTo(stationBuildPosition) < 4.2) return false;
-  if (position.distanceTo(traderPosition) < 5.4) return false;
-  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.5);
+  if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
+  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.2)) return false;
+  if (position.distanceTo(trader.sellPosition) < 4.4) return false;
+  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.6);
 };
 
-// Ağaçlar yenilenmediği için orman baştan cömert kurulur; oyuncu yakını
-// tükettikçe kademeli olarak derine ilerler.
-for (let index = 0; index < 64; index += 1) {
-  let position = new THREE.Vector3();
-  let attempts = 0;
-  do {
-    position = new THREE.Vector3((seededRandom() - 0.5) * 47, 0, (seededRandom() - 0.5) * 63);
-    attempts += 1;
-  } while (!isClearForTree(position) && attempts < 200);
-  if (isClearForTree(position)) makeTree(position, index, tierForDistance(position.distanceTo(basePosition)));
-}
+const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
+const TIER_HEIGHTS = [3.6, 4.4, 5.2];
 
-const createRock = (position: THREE.Vector3, scale: number) => {
-  const rock = new THREE.Mesh(
-    new THREE.DodecahedronGeometry(scale, 0),
-    new THREE.MeshStandardMaterial({ color: 0x7f8374, roughness: 1, flatShading: true }),
-  );
-  rock.position.copy(position);
-  rock.position.y = scale * 0.55;
-  rock.scale.y = 0.72;
-  rock.rotation.set(seededRandom(), seededRandom() * Math.PI, seededRandom());
-  rock.castShadow = true;
-  rock.receiveShadow = true;
-  world.add(rock);
-};
-
-for (let index = 0; index < 28; index += 1) {
-  const position = new THREE.Vector3((seededRandom() - 0.5) * 48, 0, (seededRandom() - 0.5) * 63);
-  const clearOfBase = !insideBase(position) && position.distanceTo(stationBuildPosition) > 3.2;
-  if (Math.abs(position.x) > 4.4 && clearOfBase) {
-    createRock(position, 0.25 + seededRandom() * 0.38);
+let treeVariant = 0;
+const populatePlot = (plot: PlotData) => {
+  const area = (plot.maxZ - plot.minZ) * (COMPOUND_EAST - COMPOUND_WEST);
+  const target = Math.round(area / 13);
+  for (let index = 0; index < target; index += 1) {
+    let position = new THREE.Vector3();
+    let attempts = 0;
+    do {
+      position = new THREE.Vector3(
+        COMPOUND_WEST + 1 + seededRandom() * (COMPOUND_EAST - COMPOUND_WEST - 2),
+        0,
+        plot.minZ + 1 + seededRandom() * (plot.maxZ - plot.minZ - 2),
+      );
+      attempts += 1;
+    } while (!isClearForTree(position) && attempts < 160);
+    if (!isClearForTree(position)) continue;
+    const tree = makeTree(position, treeVariant, plot.tier);
+    treeVariant += 1;
+    plot.trees.push(tree);
+    tree.group.visible = plot.unlocked;
+    tree.rangeIndicator.visible = false;
   }
-}
+};
 
-// Kampı çevreleyen çit; yola bakan doğu yüzü giriş için açık bırakılır.
-const fenceRailMaterial = new THREE.MeshStandardMaterial({ color: 0xa9763f, roughness: 0.95 });
+// Çit: arazi sınırını çizer. Doğu hattında tezgâh için boşluk bırakılır, çünkü
+// alıcılar oraya yanaşır; oyuncu o boşluktan geçemez, tezgâh onu kapatır.
+// Çit modeli tek bir panel; kesintisiz görünmesi için panel genişliği kadar
+// aralıklarla dizilir. Ayrı korkuluk eklenmez, yoksa model kendiyle çakışır.
+const FENCE_PANEL_HEIGHT = 1.15;
+// Panel modeli genişliği kendi yüksekliğine oranla sabit; bu orandan gelen
+// gerçek genişlik, panelleri boşluksuz dizmek için gerekiyor.
+const FENCE_PANEL_WIDTH = 1.1;
 const createFenceRun = (from: THREE.Vector3, to: THREE.Vector3) => {
   const span = to.clone().sub(from);
   const length = span.length();
-  const segments = Math.max(1, Math.round(length / 2.1));
   const fence = new THREE.Group();
-  for (let index = 0; index <= segments; index += 1) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.05, 0.16), darkTrunkMaterial);
-    post.position.copy(from).addScaledVector(span, index / segments);
-    post.position.y = 0.52;
-    post.castShadow = true;
-    fence.add(post);
-  }
-  for (const height of [0.42, 0.78]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.11, 0.08), fenceRailMaterial);
-    rail.position.copy(from).addScaledVector(span, 0.5);
-    rail.position.y = height;
-    rail.rotation.y = Math.atan2(span.x, span.z) + Math.PI / 2;
-    rail.castShadow = true;
-    fence.add(rail);
+  if (length < 0.2) return fence;
+  const panels = Math.max(1, Math.round(length / FENCE_PANEL_WIDTH));
+  // Panelin kendi +X ekseni hat boyunca uzanacak şekilde döndürülür.
+  const angle = Math.atan2(-span.z, span.x);
+  for (let index = 0; index < panels; index += 1) {
+    const panel = instantiate('fence', FENCE_PANEL_HEIGHT);
+    panel.position.copy(from).addScaledVector(span, (index + 0.5) / panels);
+    panel.rotation.y = angle;
+    panel.scale.x = (length / panels) / FENCE_PANEL_WIDTH;
+    fence.add(panel);
   }
   world.add(fence);
+  return fence;
 };
 
-createFenceRun(new THREE.Vector3(-13.2, 0, 8.2), new THREE.Vector3(-13.2, 0, -8.2));
-createFenceRun(new THREE.Vector3(-13.2, 0, 8.2), new THREE.Vector3(-5.6, 0, 8.2));
-createFenceRun(new THREE.Vector3(-13.2, 0, -8.2), new THREE.Vector3(-5.6, 0, -8.2));
-
 trader = createTradingPost(traderPosition);
+
+// Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
+const buildPlotFences = (plot: PlotData, index: number) => {
+  const gapTop = COUNTER_WIDTH / 2 + 0.4;
+  const runs: THREE.Group[] = [];
+  if (index === 0) {
+    // Doğu hattı tezgâhın iki yanından geçer.
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, gapTop)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -gapTop), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
+  } else {
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
+  }
+  runs.push(createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_WEST, 0, plot.minZ)));
+  const outerZ = index === 2 ? plot.minZ : plot.maxZ;
+  runs.push(createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, outerZ), new THREE.Vector3(COMPOUND_EAST, 0, outerZ)));
+  plot.fences = runs;
+  for (const run of runs) run.visible = plot.unlocked;
+};
+
+// Kilitli parçaları ayıran ara çitler; parça satın alınınca kaldırılır.
+const dividerFences: THREE.Group[] = [
+  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 9)),
+  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
+];
+
+plots.forEach(buildPlotFences);
+plots.forEach(populatePlot);
+
+const createRock = (position: THREE.Vector3, scale: number) => {
+  const rock = instantiate(seededRandom() > 0.5 ? 'rock-a' : 'rock-b', scale);
+  rock.position.copy(position);
+  rock.rotation.y = seededRandom() * Math.PI * 2;
+  world.add(rock);
+};
+
+// Yolun doğusu oynanmayan manzara: seyrek ağaç ve kaya ile doldurulur.
+for (let index = 0; index < 26; index += 1) {
+  const position = new THREE.Vector3(6 + seededRandom() * 18, 0, (seededRandom() - 0.5) * 60);
+  const scenery = instantiate(TIER_MODELS[index % 3], 3.4 + seededRandom() * 1.4);
+  scenery.position.copy(position);
+  scenery.rotation.y = seededRandom() * Math.PI * 2;
+  world.add(scenery);
+}
+for (let index = 0; index < 18; index += 1) {
+  const position = new THREE.Vector3(5.5 + seededRandom() * 19, 0, (seededRandom() - 0.5) * 62);
+  createRock(position, 0.4 + seededRandom() * 0.5);
+}
+
 createBuildZone(
   stationBuildPosition,
   new THREE.Vector3(),
@@ -1088,6 +1101,45 @@ createBuildZone(
   () => createStation(stationBuildPosition, true),
   'Kütük bırakma istasyonu kuruldu!',
 );
+
+// Parça açılınca aradaki bölme çiti kalkar, o parçanın ağaçları görünür olur
+// ve oyuncunun gezebildiği alan genişler.
+const unlockPlot = (index: number) => {
+  const plot = plots[index];
+  plot.unlocked = true;
+  for (const run of plot.fences) run.visible = true;
+  for (const tree of plot.trees) tree.group.visible = true;
+  const divider = dividerFences[index - 1];
+  if (divider) {
+    world.remove(divider);
+    divider.visible = false;
+  }
+  spawnParticles(new THREE.Vector3(-12, 0.8, index === 1 ? 9 : -9), 0x9fdc61, 22);
+};
+
+plots.forEach((plot, index) => {
+  if (index === 0) return;
+  createBuildZone(
+    new THREE.Vector3(-12, 0, index === 1 ? 9 : -9),
+    new THREE.Vector3(),
+    { type: 'money', amount: plot.cost },
+    () => unlockPlot(index),
+    index === 1 ? 'Kuzey ormanı açıldı!' : 'Derin orman açıldı!',
+  );
+});
+
+// Oyuncu araziden hiç çıkamaz; sınır açılmış parçaların birleşimidir.
+const clampToCompound = (position: THREE.Vector3) => {
+  position.x = THREE.MathUtils.clamp(position.x, COMPOUND_WEST + 0.7, COMPOUND_EAST - 0.8);
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const plot of plots) {
+    if (!plot.unlocked) continue;
+    minZ = Math.min(minZ, plot.minZ);
+    maxZ = Math.max(maxZ, plot.maxZ);
+  }
+  position.z = THREE.MathUtils.clamp(position.z, minZ + 0.7, maxZ - 0.7);
+};
 
 const spawnParticles = (position: THREE.Vector3, color: number, count: number) => {
   for (let index = 0; index < count; index += 1) {
@@ -1397,13 +1449,21 @@ const moveCustomerTowards = (customer: CustomerData, target: THREE.Vector3, delt
   customer.group.position.addScaledVector(direction, Math.min(distance, speed * delta));
   customer.group.rotation.y = Math.atan2(-direction.x, -direction.z);
   customer.walkClock += delta * 9;
-  customer.visual.position.y = Math.abs(Math.sin(customer.walkClock)) * 0.045;
-  customer.visual.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.userData.walkLeg) {
-      child.rotation.x = Math.sin(customer.walkClock) * 0.3 * Number(child.userData.walkLeg);
-    }
-  });
   return false;
+};
+
+// Alıcı modelleri iskeletli; klip sürülmezse bağlama pozunda donarlar.
+const playCustomerClip = (customer: CustomerData, clipName: string) => {
+  if (customer.currentClip === clipName) return;
+  const modelName = customer.visual.userData.modelName as Parameters<typeof findClip>[0];
+  const mixer = customer.visual.userData.mixer as THREE.AnimationMixer;
+  const next = mixer.clipAction(findClip(modelName, clipName));
+  const previous = customer.currentClip
+    ? mixer.clipAction(findClip(modelName, customer.currentClip))
+    : null;
+  next.reset().setEffectiveWeight(1).fadeIn(0.18).play();
+  previous?.fadeOut(0.18);
+  customer.currentClip = clipName;
 };
 
 // Seviye eğrisi: her seviye bir yetenek puanı verir.
@@ -1467,6 +1527,7 @@ const spawnCustomer = () => {
     walkClock: 0,
     bubble,
     served: false,
+    currentClip: '',
   });
 };
 
@@ -1516,7 +1577,10 @@ const sellToCustomer = (customer: CustomerData) => {
 const updateCustomers = (delta: number) => {
   for (let index = customers.length - 1; index >= 0; index -= 1) {
     const customer = customers[index];
+    (customer.visual.userData.mixer as THREE.AnimationMixer).update(delta);
+
     if (customer.state === 'leaving') {
+      playCustomerClip(customer, 'walk');
       const target = customer.path[0];
       if (!target) {
         removeCustomer(customer);
@@ -1528,6 +1592,7 @@ const updateCustomers = (delta: number) => {
     }
 
     if (customer.state === 'arriving') {
+      playCustomerClip(customer, 'walk');
       const target = customer.path[0];
       if (target && moveCustomerTowards(customer, target, delta)) customer.path.shift();
       if (customer.path.length === 0) {
@@ -1539,6 +1604,7 @@ const updateCustomers = (delta: number) => {
       continue;
     }
 
+    playCustomerClip(customer, 'idle');
     customer.patience -= delta;
     if (customer.patience <= 0) {
       sendCustomerAway(customer);
@@ -1595,7 +1661,11 @@ const spendSkillPoint = (kind: SkillKind) => {
   }
   state.skillPoints -= 1;
   state.skills[kind] += 1;
-  if (kind === 'damage') state.damage += 1;
+  // Balta hasarı belli bir seviyeye gelince elindeki balta da görsel olarak yükselir.
+  if (kind === 'damage') {
+    state.damage += 1;
+    if (state.skills.damage >= 4) setAxeModel(true);
+  }
   if (kind === 'axeSpeed') state.axeInterval = Math.max(0.4, state.axeInterval * 0.86);
   if (kind === 'capacity') state.capacity += 2;
   if (kind === 'speed') state.speed += 0.4;
@@ -1830,8 +1900,7 @@ const updatePlayer = (delta: number) => {
   if (isMoving) {
     desiredMovement.normalize();
     const nextPosition = player.position.clone().addScaledVector(desiredMovement, state.speed * delta);
-    nextPosition.x = THREE.MathUtils.clamp(nextPosition.x, -25, 25);
-    nextPosition.z = THREE.MathUtils.clamp(nextPosition.z, -33, 33);
+    clampToCompound(nextPosition);
     if (!collidesAt(nextPosition)) {
       player.position.copy(nextPosition);
     } else {
@@ -1849,17 +1918,10 @@ const updatePlayer = (delta: number) => {
     playerRotation += difference * Math.min(1, delta * 12);
     player.rotation.y = playerRotation;
     walkTime += delta * 10;
-    playerVisual.position.y = Math.abs(Math.sin(walkTime)) * 0.055;
-    legs[0].rotation.x = Math.sin(walkTime) * 0.35;
-    legs[1].rotation.x = -Math.sin(walkTime) * 0.35;
-  } else {
-    playerVisual.position.y = THREE.MathUtils.lerp(playerVisual.position.y, 0, delta * 10);
-    legs[0].rotation.x = THREE.MathUtils.lerp(legs[0].rotation.x, 0, delta * 10);
-    legs[1].rotation.x = THREE.MathUtils.lerp(legs[1].rotation.x, 0, delta * 10);
   }
 
   const nearest = nearestTreeInRange();
-  axePivot.visible = nearest !== null;
+  axeHolder.visible = nearest !== null;
   if (nearest) {
     if (!isMoving) {
       const direction = nearest.group.position.clone().sub(player.position);
@@ -1870,26 +1932,30 @@ const updatePlayer = (delta: number) => {
       player.rotation.y = playerRotation;
     }
     chopClock += delta;
-    const chopRatio = Math.min(1, chopClock / state.axeInterval);
-    if (chopRatio < 0.56) {
-      axePivot.rotation.z = THREE.MathUtils.lerp(axeRestAngle, axeWindupAngle, easeInOutCubic(chopRatio / 0.56));
-    } else {
-      axePivot.rotation.z = THREE.MathUtils.lerp(axeWindupAngle, axeStrikeAngle, easeInOutCubic((chopRatio - 0.56) / 0.44));
-    }
-    toolArm.rotation.z = -0.38 + (axePivot.rotation.z - axeRestAngle) * 0.18;
     if (chopClock >= state.axeInterval) {
       chopClock -= state.axeInterval;
       hitTree(nearest);
     }
   } else {
     chopClock = 0;
-    axePivot.rotation.z = THREE.MathUtils.lerp(axePivot.rotation.z, axeRestAngle, delta * 12);
-    toolArm.rotation.z = THREE.MathUtils.lerp(toolArm.rotation.z, -0.38, delta * 12);
   }
+
+  // Klip seçimi: kesim yürümeyi bastırır, dolu sırt taşıma duruşuna geçer.
+  const chopping = nearest !== null && !isMoving;
+  if (chopping) {
+    // Balta vuruşu balta aralığına uydurulur ki animasyon ile hasar örtüşsün.
+    const swing = playerAction('attack-melee-right');
+    swing.timeScale = swing.getClip().duration / Math.max(0.2, state.axeInterval);
+    playPlayerClip('attack-melee-right', 0.12);
+  } else if (isMoving) {
+    playPlayerClip(state.carried > 0 ? 'walk' : 'walk');
+  } else {
+    playPlayerClip(state.carried > 0 ? 'holding-both' : 'idle');
+  }
+  playerMixer.update(delta);
 
   const stackSway = isMoving ? -0.1 : 0.025;
   stackGroup.rotation.x = THREE.MathUtils.lerp(stackGroup.rotation.x, stackSway, delta * 7);
-
 };
 
 let collectionCooldown = 0;
