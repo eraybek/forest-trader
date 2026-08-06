@@ -82,8 +82,10 @@ interface CustomerData {
   state: CustomerState;
   path: THREE.Vector3[];
   slotIndex: number;
-  // Teklif: wantWood kütük karşılığında offerGold para.
-  wantWood: number;
+  // Teklif: wantAmount adet mal karşılığında offerGold para. Alıcı ya ham
+  // kütük ya da işlenmiş tahta ister.
+  wantsPlanks: boolean;
+  wantAmount: number;
   offerGold: number;
   patience: number;
   maxPatience: number;
@@ -471,6 +473,12 @@ const state = {
   // gelen odun daha pahalı olduğu için stok tek bir ortalama fiyat taşır.
   stock: 0,
   stockValue: 0,
+  // Bıçkıhane çıktısı. Tahta kütükten belirgin pahalıdır, bu yüzden ayrı
+  // stok ve ayrı ortalama değer taşır.
+  planks: 0,
+  plankValue: 0,
+  sawmillBuilt: false,
+  clerkHired: false,
   capacity: 5,
   damage: 1,
   speed: 4.8,
@@ -1128,6 +1136,105 @@ plots.forEach((plot, index) => {
   );
 });
 
+// Bıçkıhane istasyondaki ham kütüğü zamanla tahtaya çevirir. Oyuncunun
+// müdahalesi gerekmez; tek şartı istasyonda kütük olması.
+const plankPile = new THREE.Group();
+
+const createSawmill = () => {
+  const group = new THREE.Group();
+  group.position.copy(sawmillBuildPosition);
+  group.add(instantiate('workbench', 1.35));
+  const logCrate = instantiate('crate', 0.8);
+  logCrate.position.set(-1.25, 0, 0.4);
+  group.add(logCrate);
+  plankPile.position.set(1.3, 0, 0);
+  group.add(plankPile);
+  world.add(group);
+  group.scale.setScalar(0.02);
+  addTween(0.7, (progress) => group.scale.setScalar(easeOutBack(progress)), () => group.scale.setScalar(1));
+  state.sawmillBuilt = true;
+};
+
+// Çıktı yığını tahta stoğunu yansıtır, kalabalık olmasın diye sınırlanır.
+const rebuildPlankPile = () => {
+  plankPile.clear();
+  const shown = Math.min(state.planks, 10);
+  for (let index = 0; index < shown; index += 1) {
+    const plank = instantiate('resource-wood', 0.28);
+    plank.position.set(0, index * 0.16, (index % 2) * 0.12);
+    plankPile.add(plank);
+  }
+};
+
+let sawClock = 0;
+const SAW_INTERVAL = 2.6;
+const updateSawmill = (delta: number) => {
+  if (!state.sawmillBuilt || state.stock <= 0) return;
+  sawClock += delta;
+  if (sawClock < SAW_INTERVAL) return;
+  sawClock = 0;
+  // Kütüğün kendi değeri tahtaya taşınır, böylece derin ormandan gelen odun
+  // işlendiğinde de pahalı kalır.
+  const unit = marketRate();
+  state.stock -= 1;
+  state.stockValue = Math.max(0, state.stockValue - unit);
+  state.planks += 1;
+  state.plankValue += unit * PLANK_MULTIPLIER;
+  rebuildStationPiles();
+  rebuildTraderStock();
+  rebuildPlankPile();
+  bounceGroup(plankPile);
+  updateUI();
+};
+
+// Tezgâhtar işe alınınca tezgâhın arkasında durur ve alıcılara kendisi satar;
+// oyuncu tezgâha koşmak zorunda kalmaz.
+let clerkVisual: THREE.Group | null = null;
+
+const hireClerk = () => {
+  const group = new THREE.Group();
+  group.position.copy(trader.sellPosition).add(new THREE.Vector3(0.35, 0, 1.5));
+  const visual = createCustomerVisual(2);
+  group.add(visual);
+  // Tezgâha, yani +x yönüne bakar.
+  group.rotation.y = -Math.PI / 2;
+  world.add(group);
+  const mixer = visual.userData.mixer as THREE.AnimationMixer;
+  mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
+  clerkVisual = visual;
+  state.clerkHired = true;
+};
+
+let clerkClock = 0;
+const CLERK_INTERVAL = 3.2;
+const updateClerk = (delta: number) => {
+  if (!clerkVisual) return;
+  (clerkVisual.userData.mixer as THREE.AnimationMixer).update(delta);
+  clerkClock += delta;
+  if (clerkClock < CLERK_INTERVAL) return;
+  clerkClock = 0;
+  const ready = customers.find(
+    (customer) => customer.state === 'waiting' && !customer.served && availableFor(customer) >= customer.wantAmount,
+  );
+  if (ready) sellToCustomer(ready);
+};
+
+createBuildZone(
+  sawmillBuildPosition,
+  new THREE.Vector3(),
+  { type: 'money', amount: 60 },
+  createSawmill,
+  'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
+);
+
+createBuildZone(
+  clerkBuildPosition,
+  new THREE.Vector3(),
+  { type: 'money', amount: 150 },
+  hireClerk,
+  'Tezgâhtar işe alındı! Satışları o yapacak.',
+);
+
 // Oyuncu araziden hiç çıkamaz; sınır açılmış parçaların birleşimidir.
 const clampToCompound = (position: THREE.Vector3) => {
   position.x = THREE.MathUtils.clamp(position.x, COMPOUND_WEST + 0.7, COMPOUND_EAST - 0.8);
@@ -1388,7 +1495,7 @@ const unloadOneLog = (station: StationData) => {
 };
 
 // Alıcının kafasındaki teklif balonu: "N kütük → G para".
-const makeOfferBubble = (wood: number, gold: number) => {
+const makeOfferBubble = (amount: number, gold: number, planks: boolean) => {
   const canvas = document.createElement('canvas');
   canvas.width = 320;
   canvas.height = 128;
@@ -1402,8 +1509,8 @@ const makeOfferBubble = (wood: number, gold: number) => {
   context.fill();
   context.stroke();
 
-  // Sol taraf: istenen kütük.
-  context.fillStyle = '#b5713a';
+  // Sol taraf: istenen mal. Tahta daha açık renkli çizilir ki kütükten ayrılsın.
+  context.fillStyle = planks ? '#d8a55c' : '#b5713a';
   context.strokeStyle = '#7a4520';
   context.lineWidth = 6;
   context.beginPath();
@@ -1419,7 +1526,7 @@ const makeOfferBubble = (wood: number, gold: number) => {
   context.font = '900 46px system-ui';
   context.textAlign = 'left';
   context.textBaseline = 'middle';
-  context.fillText(`×${wood}`, 104, 60);
+  context.fillText(`×${amount}`, 104, 60);
 
   // Ok ve ödenecek para.
   context.fillStyle = '#9d7445';
@@ -1487,6 +1594,9 @@ const grantXp = (amount: number) => {
 
 // Stoktaki kütüklerin ortalama ham değeri; derin ormandan gelen odun pahalıdır.
 const marketRate = () => (state.stock > 0 ? state.stockValue / state.stock : 2.4);
+// Tahta, ham kütüğün yaklaşık 2.5 katı değerinde satılır.
+const PLANK_MULTIPLIER = 2.5;
+const plankRate = () => (state.planks > 0 ? state.plankValue / state.planks : marketRate() * PLANK_MULTIPLIER);
 const haggleBonus = () => 1 + (state.skills.haggle - 1) * 0.1;
 
 const removeCustomer = (customer: CustomerData) => {
@@ -1503,9 +1613,12 @@ const spawnCustomer = () => {
 
   const group = new THREE.Group();
   const visual = createCustomerVisual(customers.length + Math.floor(ambientTime));
-  const wantWood = 4 + Math.floor(seededRandom() * 7);
-  const offerGold = Math.max(5, Math.round(wantWood * marketRate() * (0.92 + seededRandom() * 0.36) * haggleBonus()));
-  const bubble = makeOfferBubble(wantWood, offerGold);
+  // Bıçkıhane kurulmadan tahta isteyen alıcı gelmez.
+  const wantsPlanks = state.sawmillBuilt && seededRandom() < 0.45;
+  const wantAmount = wantsPlanks ? 2 + Math.floor(seededRandom() * 5) : 4 + Math.floor(seededRandom() * 7);
+  const rate = wantsPlanks ? plankRate() : marketRate();
+  const offerGold = Math.max(5, Math.round(wantAmount * rate * (0.92 + seededRandom() * 0.36) * haggleBonus()));
+  const bubble = makeOfferBubble(wantAmount, offerGold, wantsPlanks);
   bubble.visible = false;
   group.add(visual, bubble);
   group.position.copy(trader.spawnPosition);
@@ -1520,7 +1633,8 @@ const spawnCustomer = () => {
     // Önce yoldan tezgâhın hizasına, sonra kendi sırasına yürür.
     path: [new THREE.Vector3(slot.x + 2.4, 0, slot.z), slot.clone()],
     slotIndex,
-    wantWood,
+    wantsPlanks,
+    wantAmount,
     offerGold,
     patience: maxPatience,
     maxPatience,
@@ -1556,11 +1670,21 @@ const payoutToPlayer = (from: THREE.Vector3, gold: number) => {
   }
 };
 
+const availableFor = (customer: CustomerData) => customer.wantsPlanks ? state.planks : state.stock;
+
 const sellToCustomer = (customer: CustomerData) => {
-  if (customer.served || customer.state !== 'waiting' || state.stock < customer.wantWood) return false;
-  const averageValue = marketRate();
-  state.stock -= customer.wantWood;
-  state.stockValue = Math.max(0, state.stockValue - averageValue * customer.wantWood);
+  if (customer.served || customer.state !== 'waiting') return false;
+  if (availableFor(customer) < customer.wantAmount) return false;
+
+  if (customer.wantsPlanks) {
+    const unit = plankRate();
+    state.planks -= customer.wantAmount;
+    state.plankValue = Math.max(0, state.plankValue - unit * customer.wantAmount);
+  } else {
+    const unit = marketRate();
+    state.stock -= customer.wantAmount;
+    state.stockValue = Math.max(0, state.stockValue - unit * customer.wantAmount);
+  }
   state.gold += customer.offerGold;
   customer.served = true;
   sendCustomerAway(customer);
@@ -1568,8 +1692,9 @@ const sellToCustomer = (customer: CustomerData) => {
   rebuildTraderStock();
   payoutToPlayer(customer.group.position.clone(), customer.offerGold);
   audio.coin();
-  grantXp(Math.round(customer.wantWood * 1.5));
-  showToast(`${customer.wantWood} kütük satıldı · +${customer.offerGold} para`);
+  grantXp(Math.round(customer.wantAmount * (customer.wantsPlanks ? 3 : 1.5)));
+  const goods = customer.wantsPlanks ? 'tahta' : 'kütük';
+  showToast(`${customer.wantAmount} ${goods} satıldı · +${customer.offerGold} para`);
   updateUI();
   return true;
 };
@@ -1631,7 +1756,7 @@ const updateTrader = (delta: number) => {
   if (sellClock < 0.35) return;
   sellClock = 0;
   const ready = customers.find(
-    (customer) => customer.state === 'waiting' && !customer.served && state.stock >= customer.wantWood,
+    (customer) => customer.state === 'waiting' && !customer.served && availableFor(customer) >= customer.wantAmount,
   );
   if (ready) sellToCustomer(ready);
 };
@@ -1698,16 +1823,21 @@ const updateUI = () => {
   skillBadge.textContent = `${state.skillPoints}`;
   skillBadge.classList.toggle('hidden', state.skillPoints <= 0);
 
-  offerStatus.textContent = `İstasyon stoğu: ${state.stock} kütük`;
+  offerStatus.textContent = state.sawmillBuilt
+    ? `Stok: ${state.stock} kütük · ${state.planks} tahta`
+    : `İstasyon stoğu: ${state.stock} kütük`;
   offerList.innerHTML = waiting.length === 0
     ? '<p class="offer-empty">Tezgâhta bekleyen alıcı yok.<br>Yoldan yeni alıcılar geliyor.</p>'
     : waiting.map((customer) => {
-      const ready = state.stock >= customer.wantWood;
+      const ready = availableFor(customer) >= customer.wantAmount;
+      const goods = customer.wantsPlanks ? 'tahta' : 'kütük';
       const ratio = Math.max(0, Math.min(1, customer.patience / customer.maxPatience));
-      const note = ready ? 'Tezgâha git ve sat' : `${customer.wantWood - state.stock} kütük daha gerekli`;
+      const note = ready
+        ? 'Tezgâha git ve sat'
+        : `${customer.wantAmount - availableFor(customer)} ${goods} daha gerekli`;
       return `<div class="offer-row${ready ? ' ready' : ''}">`
         + '<span class="offer-avatar">☻</span>'
-        + `<span><strong>${customer.wantWood} kütük istiyor</strong><small>${note}</small>`
+        + `<span><strong>${customer.wantAmount} ${goods} istiyor</strong><small>${note}</small>`
         + `<span class="offer-patience"><i style="width:${Math.round(ratio * 100)}%"></i></span></span>`
         + `<span class="offer-price">+${customer.offerGold}</span></div>`;
     }).join('');
@@ -2054,11 +2184,17 @@ const updateContextHint = () => {
   } else if (nearSellPad) {
     if (waiting.length === 0) message = `Tezgâh hazır · stok ${state.stock} kütük · alıcı bekleniyor`;
     else {
-      const best = waiting.find((customer) => state.stock >= customer.wantWood);
+      const best = waiting.find((customer) => availableFor(customer) >= customer.wantAmount);
+      const front = waiting[0];
+      const frontGoods = front.wantsPlanks ? 'tahta' : 'kütük';
       message = best
-        ? `Satılıyor · ${best.wantWood} kütük → +${best.offerGold} para`
-        : `Stok yetersiz · ${waiting[0].wantWood} kütük isteniyor, elinde ${state.stock}`;
+        ? `Satılıyor · ${best.wantAmount} ${best.wantsPlanks ? 'tahta' : 'kütük'} → +${best.offerGold} para`
+        : `Stok yetersiz · ${front.wantAmount} ${frontGoods} isteniyor, elinde ${availableFor(front)}`;
     }
+  } else if (state.sawmillBuilt && sawmillBuildPosition.distanceTo(player.position) < 2.4) {
+    message = state.stock > 0
+      ? `Bıçkıhane çalışıyor · ${state.stock} kütük → ${state.planks} tahta`
+      : `Bıçkıhane boşta · tahta ${state.planks} · istasyona kütük getir`;
   } else if (nearStation && state.carried > 0) {
     message = `Kütükler bırakılıyor · istasyon stoğu ${state.stock}`;
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
@@ -2152,7 +2288,9 @@ const animate = () => {
     updateCollection(delta);
     updateStations(delta);
     updateBuildZones(delta);
+    updateSawmill(delta);
     updateTrader(delta);
+    updateClerk(delta);
     updateCustomers(delta);
   }
   updateTweens(delta);
