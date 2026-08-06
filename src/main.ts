@@ -112,14 +112,9 @@ const getElement = <T extends HTMLElement>(id: string): T => {
 const gameRoot = getElement<HTMLDivElement>('game');
 const goldCount = getElement<HTMLElement>('gold-count');
 const woodCount = getElement<HTMLElement>('wood-count');
-const offerButton = getElement<HTMLButtonElement>('offers-button');
 const upgradesButton = getElement<HTMLButtonElement>('upgrades-button');
-const offerBadge = getElement<HTMLElement>('offer-badge');
-const offerPanel = getElement<HTMLElement>('offer-panel');
 const upgradePanel = getElement<HTMLElement>('upgrade-panel');
 const backdrop = getElement<HTMLElement>('panel-backdrop');
-const offerList = getElement<HTMLElement>('offer-list');
-const offerStatus = getElement<HTMLElement>('offer-status');
 const stockCount = getElement<HTMLElement>('stock-count');
 const skillBadge = getElement<HTMLElement>('skill-badge');
 const skillPointsNote = getElement<HTMLElement>('skill-points');
@@ -392,7 +387,7 @@ world.add(mainPath);
 // çıkmaz; alıcılar yoldan gelip yalnızca tezgâhın dış yüzüne kadar
 // yaklaşabilir. Çit bu iki tarafı ayıran tek sınırdır.
 const COMPOUND_EAST = -5;
-const COMPOUND_WEST = -19.5;
+const COMPOUND_WEST = -25.0;
 const COUNTER_WIDTH = 3.2;
 
 // Arazi z ekseninde parçalara bölünür; başta yalnızca ilk parça açıktır ve
@@ -409,8 +404,8 @@ interface PlotData {
 
 const plots: PlotData[] = [
   { minZ: -9, maxZ: 9, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
-  { minZ: 9, maxZ: 25, tier: 1, unlocked: false, cost: 120, fences: [], trees: [] },
-  { minZ: -25, maxZ: -9, tier: 2, unlocked: false, cost: 320, fences: [], trees: [] },
+  { minZ: 9, maxZ: 25, tier: 1, unlocked: false, cost: 20, fences: [], trees: [] },
+  { minZ: -25, maxZ: -9, tier: 2, unlocked: false, cost: 50, fences: [], trees: [] },
 ];
 
 const traderPosition = new THREE.Vector3(COMPOUND_EAST, 0, 0);
@@ -651,9 +646,9 @@ const rebuildPlayerStack = () => {
 // derine inmek zorunda kalır; derindeki ağaç daha uzun kesilir ama daha çok ve
 // daha değerli kütük verir, böylece yürüme mesafesi kendini amorti eder.
 const forestTiers = [
-  { hp: 3, logs: 3, value: 2 },
-  { hp: 6, logs: 4, value: 4 },
-  { hp: 10, logs: 5, value: 7 },
+  { hp: 3, logs: 5, value: 25 },
+  { hp: 6, logs: 6, value: 50 },
+  { hp: 10, logs: 8, value: 90 },
 ];
 
 const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeData => {
@@ -959,11 +954,10 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
     position: position.clone(),
     sellPosition: position.clone().add(new THREE.Vector3(-1.5, 0, 0)),
     stockPile,
-    // Alıcılar çitin dışında, tezgâha dik tek sıra hâlinde bekler: en öndeki
-    // tezgâhın hizasında, arkadakiler kuzeye doğru dizilir.
-    slots: [0, 1.5, 3.0].map((z) => position.clone().add(new THREE.Vector3(1.7, 0, z))),
-    spawnPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 14),
-    exitPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 16),
+    // Alıcılar tezgâhın önünde doğu yönünde (+X ekseni) tek sıra hâlinde arka arkaya dizilir.
+    slots: [0, 1.4, 2.8, 4.2].map((xOffset) => position.clone().add(new THREE.Vector3(1.7 + xOffset, 0, 0))),
+    spawnPosition: position.clone().add(new THREE.Vector3(7.5, 0, 0)),
+    exitPosition: position.clone().add(new THREE.Vector3(7.5, 0, 2.5)),
     colliders: [
       { center: position.clone(), halfX: 0.45, halfZ: COUNTER_WIDTH / 2 + 0.3 },
     ],
@@ -1118,7 +1112,7 @@ for (let index = 0; index < 18; index += 1) {
 createBuildZone(
   stationBuildPosition,
   new THREE.Vector3(),
-  { type: 'wood', amount: 3 },
+  { type: 'wood', amount: 1 },
   () => createStation(stationBuildPosition, true),
   'Kütük bırakma istasyonu kuruldu!',
 );
@@ -1141,7 +1135,7 @@ const unlockPlot = (index: number) => {
 plots.forEach((plot, index) => {
   if (index === 0) return;
   createBuildZone(
-    new THREE.Vector3(-12, 0, index === 1 ? 9 : -9),
+    new THREE.Vector3(-12, 0, index === 1 ? 6.8 : -6.8),
     new THREE.Vector3(),
     { type: 'money', amount: plot.cost },
     () => unlockPlot(index),
@@ -1235,7 +1229,7 @@ const updateClerk = (delta: number) => {
 createBuildZone(
   sawmillBuildPosition,
   new THREE.Vector3(),
-  { type: 'money', amount: 60 },
+  { type: 'money', amount: 15 },
   createSawmill,
   'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
 );
@@ -1243,7 +1237,7 @@ createBuildZone(
 createBuildZone(
   clerkBuildPosition,
   new THREE.Vector3(),
-  { type: 'money', amount: 150 },
+  { type: 'money', amount: 30 },
   hireClerk,
   'Tezgâhtar işe alındı! Satışları o yapacak.',
 );
@@ -1507,52 +1501,47 @@ const unloadOneLog = (station: StationData) => {
   updateUI();
 };
 
-// Alıcının kafasındaki teklif balonu: "N kütük → G para".
-const makeOfferBubble = (amount: number, gold: number, planks: boolean) => {
+// Alıcının kafasındaki istek balonu: yalnızca kaç kütük/tahta istediği görünür.
+const makeOfferBubble = (amount: number, planks: boolean) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 320;
-  canvas.height = 128;
+  canvas.width = 210;
+  canvas.height = 110;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context is unavailable.');
   context.fillStyle = 'rgba(255,255,255,.96)';
   context.strokeStyle = '#6c512f';
-  context.lineWidth = 8;
+  context.lineWidth = 7;
   context.beginPath();
-  context.roundRect(8, 8, 304, 102, 34);
+  context.roundRect(6, 6, 198, 98, 28);
   context.fill();
   context.stroke();
 
-  // Sol taraf: istenen mal. Tahta daha açık renkli çizilir ki kütükten ayrılsın.
+  // İstenen mal simgesi
   context.fillStyle = planks ? '#d8a55c' : '#b5713a';
   context.strokeStyle = '#7a4520';
-  context.lineWidth = 6;
+  context.lineWidth = 5;
   context.beginPath();
-  context.roundRect(34, 40, 54, 34, 12);
+  context.roundRect(22, 34, 46, 30, 10);
   context.fill();
   context.stroke();
   context.fillStyle = '#e1ad63';
   context.beginPath();
-  context.ellipse(88, 57, 9, 17, 0, 0, Math.PI * 2);
+  context.ellipse(68, 49, 8, 15, 0, 0, Math.PI * 2);
   context.fill();
   context.stroke();
-  context.fillStyle = '#4c3625';
-  context.font = '900 46px system-ui';
+
+  // Miktar
+  context.fillStyle = '#3a2414';
+  context.font = '900 44px system-ui';
   context.textAlign = 'left';
   context.textBaseline = 'middle';
-  context.fillText(`×${amount}`, 104, 60);
-
-  // Ok ve ödenecek para.
-  context.fillStyle = '#9d7445';
-  context.fillText('→', 178, 58);
-  context.fillStyle = '#1f8f45';
-  context.font = '900 48px system-ui';
-  context.fillText(`+${gold}`, 222, 60);
+  context.fillText(`×${amount}`, 84, 52);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
   bubble.position.set(0, 2.42, 0);
-  bubble.scale.set(2.05, 0.82, 1);
+  bubble.scale.set(1.4, 0.73, 1);
   bubble.renderOrder = 300;
   return bubble;
 };
@@ -1605,11 +1594,10 @@ const grantXp = (amount: number) => {
   }
 };
 
-// Stoktaki kütüklerin ortalama ham değeri; derin ormandan gelen odun pahalıdır.
-const marketRate = () => (state.stock > 0 ? state.stockValue / state.stock : 2.4);
-// Tahta, ham kütüğün yaklaşık 2.5 katı değerinde satılır.
-const PLANK_MULTIPLIER = 2.5;
-const plankRate = () => (state.planks > 0 ? state.plankValue / state.planks : marketRate() * PLANK_MULTIPLIER);
+const marketRate = () => 25;
+// Tahta, ham kütüğün yaklaşık 2.4 katı değerinde satılır.
+const PLANK_MULTIPLIER = 2.4;
+const plankRate = () => 60;
 const haggleBonus = () => 1 + (state.skills.haggle - 1) * 0.1;
 
 const removeCustomer = (customer: CustomerData) => {
@@ -1634,7 +1622,7 @@ const advanceQueue = () => {
 };
 
 const spawnCustomer = () => {
-  const slotIndex = [0, 1, 2].find(
+  const slotIndex = [0, 1, 2, 3].find(
     (index) => !customers.some((customer) => customer.slotIndex === index && customer.state !== 'leaving'),
   );
   if (slotIndex === undefined) return;
@@ -1643,10 +1631,9 @@ const spawnCustomer = () => {
   const visual = createCustomerVisual(customers.length + Math.floor(ambientTime));
   // Bıçkıhane kurulmadan tahta isteyen alıcı gelmez.
   const wantsPlanks = state.sawmillBuilt && seededRandom() < 0.45;
-  const wantAmount = wantsPlanks ? 2 + Math.floor(seededRandom() * 5) : 4 + Math.floor(seededRandom() * 7);
-  const rate = wantsPlanks ? plankRate() : marketRate();
-  const offerGold = Math.max(5, Math.round(wantAmount * rate * (0.92 + seededRandom() * 0.36) * haggleBonus()));
-  const bubble = makeOfferBubble(wantAmount, offerGold, wantsPlanks);
+  const wantAmount = wantsPlanks ? 2 + Math.floor(seededRandom() * 4) : 3 + Math.floor(seededRandom() * 5);
+  const offerGold = Math.round(wantAmount * (wantsPlanks ? 60 : 25) * haggleBonus());
+  const bubble = makeOfferBubble(wantAmount, wantsPlanks);
   bubble.visible = false;
   group.add(visual, bubble);
   group.position.copy(trader.spawnPosition);
@@ -1847,30 +1834,8 @@ const updateUI = () => {
   levelFill.style.width = `${Math.min(100, (state.xp / needed) * 100)}%`;
   levelText.textContent = `${Math.floor(state.xp)} / ${needed} XP`;
 
-  const waiting = customers.filter((customer) => customer.state === 'waiting' && !customer.served);
-  offerBadge.textContent = `${waiting.length}`;
-  offerBadge.classList.toggle('hidden', waiting.length === 0);
   skillBadge.textContent = `${state.skillPoints}`;
   skillBadge.classList.toggle('hidden', state.skillPoints <= 0);
-
-  offerStatus.textContent = state.sawmillBuilt
-    ? `Stok: ${state.stock} kütük · ${state.planks} tahta`
-    : `İstasyon stoğu: ${state.stock} kütük`;
-  offerList.innerHTML = waiting.length === 0
-    ? '<p class="offer-empty">Tezgâhta bekleyen alıcı yok.<br>Yoldan yeni alıcılar geliyor.</p>'
-    : waiting.map((customer) => {
-      const ready = availableFor(customer) >= customer.wantAmount;
-      const goods = customer.wantsPlanks ? 'tahta' : 'kütük';
-      const ratio = Math.max(0, Math.min(1, customer.patience / customer.maxPatience));
-      const note = ready
-        ? 'Tezgâha git ve sat'
-        : `${customer.wantAmount - availableFor(customer)} ${goods} daha gerekli`;
-      return `<div class="offer-row${ready ? ' ready' : ''}">`
-        + '<span class="offer-avatar">☻</span>'
-        + `<span><strong>${customer.wantAmount} ${goods} istiyor</strong><small>${note}</small>`
-        + `<span class="offer-patience"><i style="width:${Math.round(ratio * 100)}%"></i></span></span>`
-        + `<span class="offer-price">+${customer.offerGold}</span></div>`;
-    }).join('');
 
   skillPointsNote.textContent = state.skillPoints > 0
     ? `Dağıtılmamış puan: ${state.skillPoints}`
@@ -1896,7 +1861,6 @@ const showToast = (message: string) => {
 
 const openPanel = (panel: HTMLElement) => {
   audio.button();
-  offerPanel.classList.add('hidden');
   upgradePanel.classList.add('hidden');
   panel.classList.remove('hidden');
   backdrop.classList.remove('hidden');
@@ -1907,7 +1871,6 @@ const openPanel = (panel: HTMLElement) => {
 };
 
 const closePanels = () => {
-  offerPanel.classList.add('hidden');
   upgradePanel.classList.add('hidden');
   backdrop.classList.add('hidden');
 };
@@ -1955,7 +1918,6 @@ playButton.addEventListener('click', async () => {
   document.body.classList.remove('menu-active');
 });
 
-offerButton.addEventListener('click', () => openPanel(offerPanel));
 upgradesButton.addEventListener('click', () => openPanel(upgradePanel));
 backdrop.addEventListener('click', closePanels);
 document.querySelectorAll<HTMLButtonElement>('.close-panel').forEach((button) => button.addEventListener('click', closePanels));
