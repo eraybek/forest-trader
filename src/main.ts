@@ -567,6 +567,9 @@ scene.add(player);
 // arasında yumuşak geçişle sürülüyor.
 const PLAYER_HEIGHT = 1.62;
 const playerVisual = instantiate('player', PLAYER_HEIGHT);
+// Model +z yönüne bakıyor, hareket matematiği ise -z varsayıyor. Görseli
+// çevirmek yürüme ve balta vuruşunun ikisini birden düzeltir.
+playerVisual.rotation.y = Math.PI;
 player.add(playerVisual);
 
 const playerMixer = new THREE.AnimationMixer(playerVisual);
@@ -619,6 +622,7 @@ const BUYER_MODELS = ['buyer-b', 'buyer-c', 'buyer-d', 'buyer-e', 'buyer-f', 'bu
 const createCustomerVisual = (variant: number) => {
   const name = BUYER_MODELS[Math.abs(variant) % BUYER_MODELS.length];
   const visual = instantiate(name, PLAYER_HEIGHT);
+  visual.rotation.y = Math.PI;
   const mixer = new THREE.AnimationMixer(visual);
   visual.userData.mixer = mixer;
   visual.userData.modelName = name;
@@ -721,6 +725,8 @@ const makePurchaseLabel = (paid: number, cost: number, costType: CostType = 'mon
     new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide }),
   );
   label.rotation.x = -Math.PI / 2;
+  // Kamera açısıyla hizalanması için düzlem içinde çeyrek tur döndürülür.
+  label.rotation.z = Math.PI / 2;
   label.renderOrder = 220;
   label.userData.canvas = canvas;
   label.userData.context = context;
@@ -953,10 +959,11 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
     position: position.clone(),
     sellPosition: position.clone().add(new THREE.Vector3(-1.5, 0, 0)),
     stockPile,
-    // Alıcılar tezgâhın yol tarafında, çitin dışında bekler.
-    slots: [-1.25, 0, 1.25].map((z) => position.clone().add(new THREE.Vector3(1.5, 0, z))),
-    spawnPosition: new THREE.Vector3(1.8, 0, 15),
-    exitPosition: new THREE.Vector3(1.8, 0, 17),
+    // Alıcılar çitin dışında, tezgâha dik tek sıra hâlinde bekler: en öndeki
+    // tezgâhın hizasında, arkadakiler kuzeye doğru dizilir.
+    slots: [0, 1.5, 3.0].map((z) => position.clone().add(new THREE.Vector3(1.7, 0, z))),
+    spawnPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 14),
+    exitPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 16),
     colliders: [
       { center: position.clone(), halfX: 0.45, halfZ: COUNTER_WIDTH / 2 + 0.3 },
     ],
@@ -1005,7 +1012,7 @@ const TIER_HEIGHTS = [3.6, 4.4, 5.2];
 let treeVariant = 0;
 const populatePlot = (plot: PlotData) => {
   const area = (plot.maxZ - plot.minZ) * (COMPOUND_EAST - COMPOUND_WEST);
-  const target = Math.round(area / 13);
+  const target = Math.round(area / 7.5);
   for (let index = 0; index < target; index += 1) {
     let position = new THREE.Vector3();
     let attempts = 0;
@@ -1056,19 +1063,19 @@ const createFenceRun = (from: THREE.Vector3, to: THREE.Vector3) => {
 trader = createTradingPost(traderPosition);
 
 // Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
+// Yalnızca yol sınırı çitle ayrılır. Oyuncunun arazisi batı, kuzey ve güneyde
+// açık kalır — kafeste hissettirmemek için kasıtlı; oyuncuyu tutan şey çit
+// değil, arazi sınırı.
 const buildPlotFences = (plot: PlotData, index: number) => {
   const gapTop = COUNTER_WIDTH / 2 + 0.4;
   const runs: THREE.Group[] = [];
   if (index === 0) {
-    // Doğu hattı tezgâhın iki yanından geçer.
+    // Doğu hattı tezgâhın iki yanından geçer; tezgâh boşluğu kapatır.
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, gapTop)));
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -gapTop), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   } else {
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   }
-  runs.push(createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_WEST, 0, plot.minZ)));
-  const outerZ = index === 2 ? plot.minZ : plot.maxZ;
-  runs.push(createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, outerZ), new THREE.Vector3(COMPOUND_EAST, 0, outerZ)));
   plot.fences = runs;
   for (const run of runs) run.visible = plot.unlocked;
 };
@@ -1078,6 +1085,12 @@ const dividerFences: THREE.Group[] = [
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 9)),
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
 ];
+
+// Alıcı şeridi: yol tarafında, çitle çevrili dar bir koridor. Kuzey ucu açık
+// (alıcılar oradan girer), güney ucu ve yol yüzü kapalı.
+const LANE_OUTER = COMPOUND_EAST + 3.2;
+createFenceRun(new THREE.Vector3(LANE_OUTER, 0, 12), new THREE.Vector3(LANE_OUTER, 0, -2.4));
+createFenceRun(new THREE.Vector3(LANE_OUTER, 0, -2.4), new THREE.Vector3(COMPOUND_EAST, 0, -2.4));
 
 plots.forEach(buildPlotFences);
 plots.forEach(populatePlot);
@@ -1603,6 +1616,21 @@ const removeCustomer = (customer: CustomerData) => {
   world.remove(customer.group);
   const index = customers.indexOf(customer);
   if (index >= 0) customers.splice(index, 1);
+  advanceQueue();
+};
+
+// Tek sıra: öndeki ayrılınca arkadakiler birer basamak öne yürür.
+const advanceQueue = () => {
+  const queued = customers
+    .filter((customer) => customer.state !== 'leaving')
+    .sort((a, b) => a.slotIndex - b.slotIndex);
+  queued.forEach((customer, position) => {
+    if (customer.slotIndex === position) return;
+    customer.slotIndex = position;
+    customer.state = 'arriving';
+    customer.bubble.visible = false;
+    customer.path = [trader.slots[position].clone()];
+  });
 };
 
 const spawnCustomer = () => {
@@ -1630,8 +1658,8 @@ const spawnCustomer = () => {
     group,
     visual,
     state: 'arriving',
-    // Önce yoldan tezgâhın hizasına, sonra kendi sırasına yürür.
-    path: [new THREE.Vector3(slot.x + 2.4, 0, slot.z), slot.clone()],
+    // Şerit boyunca doğrudan kendi sırasına yürür.
+    path: [slot.clone()],
     slotIndex,
     wantsPlanks,
     wantAmount,
@@ -1648,7 +1676,9 @@ const spawnCustomer = () => {
 const sendCustomerAway = (customer: CustomerData) => {
   customer.bubble.visible = false;
   customer.state = 'leaving';
-  customer.path = [new THREE.Vector3(trader.slots[customer.slotIndex].x + 2.6, 0, customer.group.position.z), trader.exitPosition.clone()];
+  // Şeritten kuzeye doğru çıkar; 'leaving' olduğu için sıra hesabına girmez.
+  customer.path = [trader.exitPosition.clone()];
+  advanceQueue();
 };
 
 // Ödeme banknotları müşteriden oyuncuya uçar.
