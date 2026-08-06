@@ -1100,8 +1100,21 @@ const buildPlotFences = (plot: PlotData, index: number) => {
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, 6.1)));
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 2.9), new THREE.Vector3(COMPOUND_EAST, 0, -2.9)));
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -6.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
-  } else {
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
+  } else if (index === 1) {
+    // Kuzey Genişlemesi (Plot 1): Dış sınır çitleri (Kuzey Z = -25, Batı X = -25, Doğu Z = -25..-9)
+    runs.push(createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(COMPOUND_EAST, 0, -25)));
+    runs.push(createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(-25, 0, -9)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -25), new THREE.Vector3(COMPOUND_EAST, 0, -9)));
+  } else if (index === 2) {
+    // Güney Genişlemesi (Plot 2): Dış sınır çitleri (Güney Z = 25, Batı X = -25, Doğu Z = 9..25)
+    runs.push(createFenceRun(new THREE.Vector3(-25, 0, 25), new THREE.Vector3(COMPOUND_EAST, 0, 25)));
+    runs.push(createFenceRun(new THREE.Vector3(-25, 0, 9), new THREE.Vector3(-25, 0, 25)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 25)));
+  } else if (index === 3) {
+    // Batı Genişlemesi (Plot 3): Dış sınır çitleri (Batı X = -42, Kuzey & Güney uzantıları)
+    runs.push(createFenceRun(new THREE.Vector3(-42, 0, -25), new THREE.Vector3(-42, 0, 25)));
+    runs.push(createFenceRun(new THREE.Vector3(-42, 0, -25), new THREE.Vector3(-25, 0, -25)));
+    runs.push(createFenceRun(new THREE.Vector3(-42, 0, 25), new THREE.Vector3(-25, 0, 25)));
   }
   plot.fences = runs;
   for (const run of runs) run.visible = plot.unlocked;
