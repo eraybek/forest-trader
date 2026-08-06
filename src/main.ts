@@ -815,6 +815,20 @@ const addBox = (parent: THREE.Group, size: THREE.Vector3, position: THREE.Vector
   return mesh;
 };
 
+const structureOccluderMeshes: THREE.Mesh[] = [];
+
+const registerStructureOccluder = (group: THREE.Group) => {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh && !(child.geometry instanceof THREE.RingGeometry) && !(child.geometry instanceof THREE.PlaneGeometry)) {
+      child.material = (child.material as THREE.Material).clone();
+      child.material.transparent = true;
+      child.userData.structureGroup = group;
+      child.userData.baseOpacity = child.material.opacity ?? 1.0;
+      structureOccluderMeshes.push(child);
+    }
+  });
+};
+
 const createStation = (position: THREE.Vector3, animate = false) => {
   const group = new THREE.Group();
   group.position.copy(position);
@@ -839,6 +853,7 @@ const createStation = (position: THREE.Vector3, animate = false) => {
   group.add(deliveryRing);
 
   world.add(group);
+  registerStructureOccluder(group);
   const station = { group, position: position.clone(), pile };
   stations.push(station);
   if (animate) {
@@ -966,6 +981,7 @@ const createTradingPost = (position: THREE.Vector3, isPlankPost = false): Trader
   group.add(sellRing);
 
   world.add(group);
+  registerStructureOccluder(group);
 
   return {
     group,
@@ -1214,6 +1230,7 @@ const createSawmill = () => {
   plankPile.position.set(1.3, 0, 0);
   group.add(plankPile);
   world.add(group);
+  registerStructureOccluder(group);
   group.scale.setScalar(0.02);
   addTween(0.7, (progress) => group.scale.setScalar(easeOutBack(progress)), () => group.scale.setScalar(1));
   state.sawmillBuilt = true;
@@ -2456,6 +2473,23 @@ const updateTreeOcclusion = () => {
       material.opacity = shouldFade ? 0.28 : 1;
       material.depthWrite = !shouldFade;
     });
+  }
+
+  // 2. Yapı (İstasyon, Bıçkıhane, Tezgâh) Şeffaflaşması (Occlusion)
+  const occludingGroups = new Set<THREE.Group>();
+  for (const hit of occlusionRaycaster.intersectObjects(structureOccluderMeshes, false)) {
+    const group = hit.object.userData.structureGroup as THREE.Group | undefined;
+    if (group) occludingGroups.add(group);
+  }
+
+  for (const mesh of structureOccluderMeshes) {
+    const group = mesh.userData.structureGroup as THREE.Group;
+    const shouldFade = occludingGroups.has(group);
+    const material = mesh.material as THREE.Material;
+    const baseOpacity = (mesh.userData.baseOpacity as number | undefined) ?? 1.0;
+    const targetOpacity = shouldFade ? 0.32 : baseOpacity;
+    material.opacity = THREE.MathUtils.lerp(material.opacity, targetOpacity, 0.25);
+    material.depthWrite = material.opacity > 0.6;
   }
 };
 
