@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#3e7b3b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Forest Trader</title>
+    <script type="module" crossorigin src="/forest-trader/assets/index-hYmW1sjT.js"></script>
+    <link rel="stylesheet" crossorigin href="/forest-trader/assets/index-BN5dK-6K.css">
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <main id="main-menu" class="main-menu" aria-label="Ana menü">
+      <div class="menu-vignette"></div>
+      <div class="menu-content">
+        <div class="game-logo" aria-label="Forest Trader">
+          <span class="logo-forest">FOREST</span>
+          <span class="logo-trader">TRADER</span>
+          <span class="logo-axe" aria-hidden="true">◆</span>
+        </div>
+        <p class="menu-tagline">Kes · Topla · Büyüt</p>
+        <button id="play-button" class="play-button"><span>▶</span><b>OYNA</b></button>
+      </div>
+      <div class="menu-footer">MOONBORNE GAMES</div>
+    </main>
+
+    <button id="settings-button" class="settings-button" aria-label="Ayarlar">⚙</button>
+
+    <div id="settings-backdrop" class="settings-backdrop hidden"></div>
+    <section id="settings-panel" class="settings-panel hidden" aria-label="Ses ayarları">
+      <header>
+        <div><span class="eyebrow">AYARLAR</span><h2>Ses</h2></div>
+        <button id="settings-close" class="close-panel" aria-label="Kapat">×</button>
+      </header>
+      <label class="volume-row" for="music-volume">
+        <span class="volume-icon">♫</span>
+        <span><strong>Müzik</strong><small>Orman melodisi</small></span>
+        <input id="music-volume" type="range" min="0" max="100" value="55" />
+        <output id="music-volume-value">55</output>
+      </label>
+      <label class="volume-row" for="sfx-volume">
+        <span class="volume-icon">♬</span>
+        <span><strong>Efektler</strong><small>Kesme, toplama ve bırakma</small></span>
+        <input id="sfx-volume" type="range" min="0" max="100" value="80" />
+        <output id="sfx-volume-value">80</output>
+      </label>
+    </section>
+
+    <div class="top-hud game-ui" aria-label="Kaynaklar">
+      <div class="resource-pill"><span class="cash-icon" aria-hidden="true"></span><strong id="gold-count">0</strong></div>
+      <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
+      <div class="resource-pill"><span class="stock-icon">▣</span><strong id="stock-count">0</strong></div>
+    </div>
+
+    <div class="side-actions game-ui">
+      <button id="offers-button" class="square-button" aria-label="Alıcılar">
+        <span>↔</span><small>Alıcı</small><b id="offer-badge" class="badge hidden">1</b>
+      </button>
+      <button id="upgrades-button" class="square-button" aria-label="Yetenekler">
+        <span>↑</span><small>Yetenek</small><b id="skill-badge" class="badge hidden">1</b>
+      </button>
+    </div>
+
+    <div class="level-bar game-ui" aria-label="Seviye ilerlemesi">
+      <span class="level-chip">Sv <strong id="level-value">1</strong></span>
+      <div class="level-track"><div id="level-fill" class="level-fill"></div></div>
+      <small id="level-text">0 / 20 XP</small>
+    </div>
+
+    <div id="action-hint" class="action-hint game-ui hidden"></div>
+
+    <div id="joystick" class="joystick" aria-label="Hareket kontrolü">
+      <div id="joystick-knob" class="joystick-knob"></div>
+    </div>
+
+    <div id="panel-backdrop" class="panel-backdrop hidden"></div>
+
+    <section id="offer-panel" class="game-panel hidden" aria-label="Alıcı paneli">
+      <header><div><span class="eyebrow">TEZGÂHTAKİ ALICILAR</span><h2>Odun teklifleri</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <div id="offer-list" class="offer-list"></div>
+      <p id="offer-status" class="panel-note">İstasyon stoğu: 0 kütük</p>
+    </section>
+
+    <section id="upgrade-panel" class="game-panel hidden" aria-label="Yetenek paneli">
+      <header><div><span class="eyebrow">YETENEKLER</span><h2>Ustalığını geliştir</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <p id="skill-points" class="panel-note points-note">Dağıtılmamış puan: 0</p>
+      <div class="upgrade-list">
+        <button class="upgrade-card" data-skill="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="axeSpeed"><span class="upgrade-symbol">⌁</span><span><strong>Balta hızı</strong><small id="axe-speed-value">1.00 sn → 0.82 sn</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="capacity"><span class="upgrade-symbol">▰</span><span><strong>Sırt kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="speed"><span class="upgrade-symbol">»</span><span><strong>Yürüme hızı</strong><small id="speed-value">4.8 → 5.2</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="haggle"><span class="upgrade-symbol">◈</span><span><strong>Pazarlık</strong><small id="haggle-value">%100 → %110</small></span><b class="point-cost">1</b></button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </body>
+</html>
