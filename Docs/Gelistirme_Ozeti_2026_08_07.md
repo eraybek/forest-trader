@@ -2,25 +2,26 @@
 
 ## Yapılan Güncellemeler ve İyileştirmeler (Tam Liste)
 
-1. **Açılan Yeni Bölgelerin Çitle Çevrilmesi (Dış Sınır Çitleri):**
-   - Her yeni bölge (Kuzey, Güney, Batı) satın alınıp açıldığında, o bölgenin dış perimetre sınırları (Kuzey `Z = -25`, Güney `Z = 25`, Batı `X = -42`) otomatik olarak yeni çitlerle tamamen kapatılır.
-   - İç kısımdaki eski bölme çiti kaldırılırken, yeni arazinin dış sınır çitleri belirir. Böylece oyuncu mevcut mülk sınırlarını her zaman net olarak görebilir.
+1. **Genişletilmiş Plot 0 Başlangıç Haritası & Hiyerarşik Hizalama:**
+   - Başlangıç Plot 0 alanı genisletilerek (`X: [-32, -5]`, `Z: [-14, 14]`) tüm binalar ve otomasyon kareleri geniş, ferah ve çakışmasız bir grid düzenine oturtuldu.
+   - **Kütük Hattı (Güney, Z = 6.5 ~ 7.5):** İstasyon (`-22`) -> Kütük Taşıyıcı (`-15.5`) -> Kütük Satıcısı (`-9.5`) -> Kütük Tezgâhı (`-5`).
+   - **Tahta Hattı (Kuzey, Z = -6.5 ~ -7.5):** Bıçkıhane (`-22`) -> Tahta Taşıyıcı (`-15.5`) -> Tahta Satıcısı (`-9.5`) -> Tahta Tezgâhı (`-5`).
 
-2. **Üstel (Eksponansiyel) Bırakma / Boşaltma Hız Eğrisi:**
-   - İstasyona kütük bırakma, Bıçkıhaneye kütük bırakma/tahta toplama ve İnşa alanlarına kaynak yatırma işlemlerinde üstel hızlandırma eğrisi (`targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, streak))`) uygulandı.
-   - İlk 1-2 eşya normal hızda bırakılırken, oyuncu alanda kaldıkça boşaltma hızı anında katlanarak hızlanır (0.11s -> 0.015s).
+2. **Milimetrik Hizalı Doğu Yolu Çitleri:**
+   - Doğu yol hattındaki tüm çitler tam olarak `X = -5.0` hizasında birleştirilerek tezgâh yanlarındaki kaymalar ve bozulmalar giderildi.
 
-3. **Nizami Yerleşim ve Alan Yönetimi:**
-   - İstasyon (`-14, 0, 5.0`) ve Bıçkıhane (`-14, 0, -5.0`) binaları tamamen Plot 0 iç alanına çekildi; çitlerin üzerine binme/kesişme sorunu giderildi.
+3. **Tezgâhların Karşısındaki Batı Ormanı Genişlemesi (Plot 3):**
+   - Tezgâhların tam karşısındaki Batı duvarında (`X = -32, Z = 0`) genişleme inşa karesi konumlandırıldı.
+   - Satın alındığında `COMPOUND_WEST` `-56.0`'ya genişler, çim zemin uzar ve batı ormanı tamamen açılır.
 
-4. **Kesintisiz Çit Hattı:**
-   - Doğu yol hattındaki çitler tezgâh boşlukları hariç tamamen kesintisiz dizildi.
+4. **Aşamalı (Sıralı) BuildZone Sistemi:**
+   - NPC ve Bıçkıhane inşa alanları başlangıçta ekranda kalabalık etmez; ana binalar yapıldıkça ilgili otomasyon kareleri aşamalı olarak açılır.
 
-5. **3 Yöne Nizami Genişleme Alanları (BuildZone):**
-   - Kuzey (`-15, 0, -7.0`), Güney (`-15, 0, 7.0`) ve Batı (`-22.8, 0, 0`) genişleme kareleri ilgili çitlerin tam ortasında ve oyuncunun iç alanında konumlandırıldı.
+5. **Üstel (Eksponansiyel) Bırakma / Boşaltma Hız Eğrisi:**
+   - Eşya ve kaynak bırakma/boşaltma işlemleri üstel hızlandırma eğrisi (`targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, streak))`) ile anında serileşir.
 
-6. **Kütük ve Tahta Taşıyıcı / Satıcı NPC Sistemleri:**
-   - Kütük ve Tahta Taşıyıcı Worker NPC'leri ile Kütük ve Tahta Satıcı NPC'leri oyuna eklendi.
+6. **Açılan Yeni Bölgelerin Çitle Çevrilmesi:**
+   - Her yeni orman açıldığında dış perimetre sınırları yeni çitlerle kapatılır.
 
 7. **Doğrulama ve Derleme:**
    - `npm run build` komutu ile TypeScript ve Vite derleme kontrolleri 0 hata ile doğrulandı.

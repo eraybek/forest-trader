@@ -393,11 +393,9 @@ world.add(mainPath);
 // çıkmaz; alıcılar yoldan gelip yalnızca tezgâhın dış yüzüne kadar
 // yaklaşabilir. Çit bu iki tarafı ayıran tek sınırdır.
 const COMPOUND_EAST = -5;
-let COMPOUND_WEST = -25.0;
+let COMPOUND_WEST = -32.0;
 const COUNTER_WIDTH = 3.2;
 
-// Arazi parçalara bölünür; başta yalnızca ilk parça açıktır ve
-// para biriktikçe kuzeye, güneye ve batıya doğru yeni orman parçaları satın alınır.
 interface PlotData {
   minZ: number;
   maxZ: number;
@@ -409,19 +407,21 @@ interface PlotData {
 }
 
 const plots: PlotData[] = [
-  { minZ: -9, maxZ: 9, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
-  { minZ: 9, maxZ: 25, tier: 1, unlocked: false, cost: 20, fences: [], trees: [] },
-  { minZ: -25, maxZ: -9, tier: 2, unlocked: false, cost: 50, fences: [], trees: [] },
-  { minZ: -25, maxZ: 25, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
+  { minZ: -14, maxZ: 14, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
+  { minZ: -32, maxZ: -14, tier: 1, unlocked: false, cost: 20, fences: [], trees: [] },
+  { minZ: 14, maxZ: 32, tier: 2, unlocked: false, cost: 50, fences: [], trees: [] },
+  { minZ: -32, maxZ: 32, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
 ];
 
-const stationBuildPosition = new THREE.Vector3(-14, 0, 5.0);
-const sawmillBuildPosition = new THREE.Vector3(-14, 0, -5.0);
-const logClerkBuildPosition = new THREE.Vector3(-8.5, 0, 4.5);
-const plankClerkBuildPosition = new THREE.Vector3(-8.5, 0, -4.5);
+const stationBuildPosition = new THREE.Vector3(-22, 0, 7.5);
+const sawmillBuildPosition = new THREE.Vector3(-22, 0, -7.5);
+const logClerkBuildPosition = new THREE.Vector3(-9.5, 0, 6.5);
+const plankClerkBuildPosition = new THREE.Vector3(-9.5, 0, -6.5);
+const logCarrierBuildPosition = new THREE.Vector3(-15.5, 0, 7.5);
+const plankCarrierBuildPosition = new THREE.Vector3(-15.5, 0, -7.5);
 
 // Alıcıların tezgâha yanaştığı kısa toprak alan; yolun batı kenarına bağlanır.
-const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.2), pathMaterial);
+const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 18), pathMaterial);
 traderPath.rotation.x = -Math.PI / 2;
 traderPath.position.set(COMPOUND_EAST + 1.9, 0.018, 0);
 traderPath.receiveShadow = true;
@@ -429,10 +429,11 @@ world.add(traderPath);
 
 // Arazi zemini: çitin içi otlak olarak biraz daha koyu okunur.
 const compoundGround = new THREE.Mesh(
-  new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 50),
+  new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 68),
   new THREE.MeshStandardMaterial({ color: 0x6fa348, roughness: 1 }),
 );
 compoundGround.rotation.x = -Math.PI / 2;
+compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
 compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
 compoundGround.receiveShadow = true;
 world.add(compoundGround);
@@ -1085,8 +1086,8 @@ const createFenceRun = (from: THREE.Vector3, to: THREE.Vector3) => {
   return fence;
 };
 
-logTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, 4.5), false);
-plankTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, -4.5), true);
+logTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, 6.5), false);
+plankTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, -6.5), true);
 plankTrader.group.visible = false;
 
 // Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
@@ -1096,25 +1097,25 @@ plankTrader.group.visible = false;
 const buildPlotFences = (plot: PlotData, index: number) => {
   const runs: THREE.Group[] = [];
   if (index === 0) {
-    // Doğu hattı: Tezgâh boşlukları hariç kesintisiz çit dizilir.
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, 6.1)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 2.9), new THREE.Vector3(COMPOUND_EAST, 0, -2.9)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -6.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
+    // Doğu hattı: Tezgâh boşlukları hariç milimetrik kesintisiz çit.
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, 8.1)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 4.9), new THREE.Vector3(COMPOUND_EAST, 0, -4.9)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -8.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   } else if (index === 1) {
-    // Kuzey Genişlemesi (Plot 1): Dış sınır çitleri (Kuzey Z = -25, Batı X = -25, Doğu Z = -25..-9)
-    runs.push(createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(COMPOUND_EAST, 0, -25)));
-    runs.push(createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(-25, 0, -9)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -25), new THREE.Vector3(COMPOUND_EAST, 0, -9)));
+    // Kuzey Genişlemesi (Plot 1): Dış sınır çitleri (Kuzey Z = -32, Batı X = -32, Doğu Z = -32..-14)
+    runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(COMPOUND_EAST, 0, -32)));
+    runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(-32, 0, -14)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -32), new THREE.Vector3(COMPOUND_EAST, 0, -14)));
   } else if (index === 2) {
-    // Güney Genişlemesi (Plot 2): Dış sınır çitleri (Güney Z = 25, Batı X = -25, Doğu Z = 9..25)
-    runs.push(createFenceRun(new THREE.Vector3(-25, 0, 25), new THREE.Vector3(COMPOUND_EAST, 0, 25)));
-    runs.push(createFenceRun(new THREE.Vector3(-25, 0, 9), new THREE.Vector3(-25, 0, 25)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 25)));
+    // Güney Genişlemesi (Plot 2): Dış sınır çitleri (Güney Z = 32, Batı X = -32, Doğu Z = 14..32)
+    runs.push(createFenceRun(new THREE.Vector3(-32, 0, 32), new THREE.Vector3(COMPOUND_EAST, 0, 32)));
+    runs.push(createFenceRun(new THREE.Vector3(-32, 0, 14), new THREE.Vector3(-32, 0, 32)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 14), new THREE.Vector3(COMPOUND_EAST, 0, 32)));
   } else if (index === 3) {
-    // Batı Genişlemesi (Plot 3): Dış sınır çitleri (Batı X = -42, Kuzey & Güney uzantıları)
-    runs.push(createFenceRun(new THREE.Vector3(-42, 0, -25), new THREE.Vector3(-42, 0, 25)));
-    runs.push(createFenceRun(new THREE.Vector3(-42, 0, -25), new THREE.Vector3(-25, 0, -25)));
-    runs.push(createFenceRun(new THREE.Vector3(-42, 0, 25), new THREE.Vector3(-25, 0, 25)));
+    // Batı Genişlemesi (Plot 3 - Tezgâhların Tam Karşısı!): Dış sınır çitleri (Batı X = -56, Kuzey & Güney uzantıları)
+    runs.push(createFenceRun(new THREE.Vector3(-56, 0, -32), new THREE.Vector3(-56, 0, 32)));
+    runs.push(createFenceRun(new THREE.Vector3(-56, 0, -32), new THREE.Vector3(-32, 0, -32)));
+    runs.push(createFenceRun(new THREE.Vector3(-56, 0, 32), new THREE.Vector3(-32, 0, 32)));
   }
   plot.fences = runs;
   for (const run of runs) run.visible = plot.unlocked;
@@ -1122,9 +1123,9 @@ const buildPlotFences = (plot: PlotData, index: number) => {
 
 // Kilitli parçaları ayıran ara çitler; parça satın alınınca kaldırılır.
 const dividerFences: THREE.Group[] = [
-  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 9)),
-  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
-  createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(-25, 0, 25)),
+  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -14), new THREE.Vector3(COMPOUND_EAST, 0, -14)),
+  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 14), new THREE.Vector3(COMPOUND_EAST, 0, 14)),
+  createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(-32, 0, 32)),
 ];
 
 plots.forEach(buildPlotFences);
@@ -1171,19 +1172,22 @@ const unlockPlot = (index: number) => {
     divider.visible = false;
   }
   if (index === 3) {
-    COMPOUND_WEST = -42.0;
+    COMPOUND_WEST = -56.0;
+    compoundGround.geometry.dispose();
+    compoundGround.geometry = new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 68);
+    compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
   }
-  spawnParticles(new THREE.Vector3(index === 3 ? -20 : -6, 0.8, index === 1 ? 6.5 : (index === 2 ? -6.5 : 0)), 0x9fdc61, 22);
+  spawnParticles(new THREE.Vector3(index === 3 ? -35 : -18, 0.8, index === 1 ? -20 : (index === 2 ? 20 : 0)), 0x9fdc61, 22);
 };
 
 plots.forEach((plot, index) => {
   if (index === 0) return;
   // 3 Yöne Nizami Genişleme Kareleri: Çitin tam ortasında ve oyuncunun iç alanında
   const targetPos = index === 1
-    ? new THREE.Vector3(-15, 0, -7.0)
+    ? new THREE.Vector3(-18.5, 0, -12.0)
     : index === 2
-      ? new THREE.Vector3(-15, 0, 7.0)
-      : new THREE.Vector3(-22.8, 0, 0);
+      ? new THREE.Vector3(-18.5, 0, 12.0)
+      : new THREE.Vector3(-29.5, 0, 0);
   createBuildZone(
     targetPos,
     new THREE.Vector3(),
@@ -1301,12 +1305,116 @@ const updateSawmill = (delta: number) => {
   }
 };
 
+const spawnLogCarrier = () => {
+  const group = new THREE.Group();
+  group.position.copy(stationBuildPosition);
+  const visual = createCustomerVisual(5);
+  group.add(visual);
+  world.add(group);
+  const mixer = visual.userData.mixer as THREE.AnimationMixer;
+  mixer.clipAction(findClip(visual.userData.modelName, 'walk')).play();
+  carriers.push({
+    group,
+    visual,
+    type: 'log',
+    state: 'toSource',
+    carriedItem: null,
+  });
+  showToast('Kütük Taşıyıcısı işe alındı!');
+};
+
+const spawnPlankCarrier = () => {
+  const group = new THREE.Group();
+  group.position.copy(sawmillBuildPosition);
+  const visual = createCustomerVisual(7);
+  group.add(visual);
+  world.add(group);
+  const mixer = visual.userData.mixer as THREE.AnimationMixer;
+  mixer.clipAction(findClip(visual.userData.modelName, 'walk')).play();
+  carriers.push({
+    group,
+    visual,
+    type: 'plank',
+    state: 'toSource',
+    carriedItem: null,
+  });
+  showToast('Tahta Taşıyıcısı işe alındı!');
+};
+
+const hireLogClerk = () => {
+  const group = new THREE.Group();
+  group.position.copy(logTrader.sellPosition);
+  const visual = createCustomerVisual(2);
+  group.add(visual);
+  group.rotation.y = Math.PI / 2;
+  world.add(group);
+  const mixer = visual.userData.mixer as THREE.AnimationMixer;
+  mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
+  state.clerkHired = true;
+  showToast('Kütük Satıcısı işe alındı!');
+};
+
+const hirePlankClerk = () => {
+  const group = new THREE.Group();
+  group.position.copy(plankTrader.sellPosition);
+  const visual = createCustomerVisual(3);
+  group.add(visual);
+  group.rotation.y = Math.PI / 2;
+  world.add(group);
+  const mixer = visual.userData.mixer as THREE.AnimationMixer;
+  mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
+  showToast('Tahta Satıcısı işe alındı!');
+};
+
+const createStationAndUnlockZones = () => {
+  createStation(stationBuildPosition, true);
+  createBuildZone(
+    logClerkBuildPosition,
+    new THREE.Vector3(),
+    { type: 'money', amount: 30 },
+    hireLogClerk,
+    'Kütük Satıcısı işe alındı!',
+  );
+  createBuildZone(
+    logCarrierBuildPosition,
+    new THREE.Vector3(),
+    { type: 'money', amount: 25 },
+    spawnLogCarrier,
+    'Kütük Taşıyıcısı işe alındı!',
+  );
+  createBuildZone(
+    sawmillBuildPosition,
+    new THREE.Vector3(),
+    { type: 'money', amount: 15 },
+    createSawmillAndUnlockZones,
+    'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
+  );
+};
+
+const createSawmillAndUnlockZones = () => {
+  createSawmill();
+  createBuildZone(
+    plankClerkBuildPosition,
+    new THREE.Vector3(),
+    { type: 'money', amount: 40 },
+    hirePlankClerk,
+    'Tahta Satıcısı işe alındı!',
+  );
+  createBuildZone(
+    plankCarrierBuildPosition,
+    new THREE.Vector3(),
+    { type: 'money', amount: 35 },
+    spawnPlankCarrier,
+    'Tahta Taşıyıcısı işe alındı!',
+  );
+};
+
 createBuildZone(
-  sawmillBuildPosition,
+  stationBuildPosition,
   new THREE.Vector3(),
-  { type: 'money', amount: 15 },
-  createSawmill,
-  'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
+  { type: 'wood', amount: 1 },
+  createStationAndUnlockZones,
+  'Kütük bırakma istasyonu kuruldu!',
 );
 
 // Oyuncu araziden hiç çıkamaz; sınır açılmış parçaların birleşimidir.
