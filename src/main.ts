@@ -326,9 +326,9 @@ gameRoot.appendChild(renderer.domElement);
 
 const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
 // Referans arcade-idle oyunlarındaki yüksek, dengeli izometrik görünüm:
-// kapıya sağdan çapraz bakar, sahne sağdan sola okunur ve perspektif
-// bozulmadan zeminin iki ekseni de belirgin görünür.
-const cameraOffset = new THREE.Vector3(15, 28, -15);
+// kapıya sağdan çapraz bakar, ana yol ekranda sol alttan sağ üste doğru
+// okunur ve perspektif bozulmadan zeminin iki ekseni de belirgin görünür.
+const cameraOffset = new THREE.Vector3(15, 28, 15);
 const cameraTarget = new THREE.Vector3();
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
