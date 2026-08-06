@@ -17,9 +17,8 @@ interface TreeData {
   home: THREE.Vector3;
   hp: number;
   maxHp: number;
-  // Orman üsten uzaklaştıkça kademelenir: derindeki ağaçlar daha uzun kesilir
-  // ama daha çok ve daha değerli kütük verir.
   tier: number;
+  plotIndex: number;
   logs: number;
   logValue: number;
   alive: boolean;
@@ -668,7 +667,7 @@ const forestTiers = [
   { hp: 10, logs: 8, value: 90 },
 ];
 
-const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeData => {
+const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, variant = 0) => {
   const group = new THREE.Group();
   group.position.copy(position);
 
@@ -683,13 +682,13 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
   rangeIndicator.add(rangeFill, rangeOutline);
   world.add(rangeIndicator);
 
-  // Kademe hem modeli hem boyu değiştirir; derin orman gözle ayırt edilir.
-  const trunk = instantiate(TIER_MODELS[tier], TIER_HEIGHTS[tier]);
+  const safeTier = Math.min(tier, TIER_MODELS.length - 1);
+  const trunk = instantiate(TIER_MODELS[safeTier], TIER_HEIGHTS[safeTier]);
   trunk.rotation.y = variant * 1.7;
   group.add(trunk);
 
   const healthBar = new THREE.Group();
-  healthBar.position.set(0, TIER_HEIGHTS[tier] + 0.5, 0);
+  healthBar.position.set(0, TIER_HEIGHTS[safeTier] + 0.5, 0);
   healthBar.visible = false;
   const barBack = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.18), new THREE.MeshBasicMaterial({ color: 0x3b2f23 }));
   const barFill = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.11), new THREE.MeshBasicMaterial({ color: 0xf1cc45 }));
@@ -699,7 +698,7 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
   group.add(healthBar);
 
   world.add(group);
-  const config = forestTiers[tier];
+  const config = forestTiers[safeTier];
   const tree: TreeData = {
     group,
     healthBar,
@@ -707,7 +706,8 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
     home: position.clone(),
     hp: config.hp,
     maxHp: config.hp,
-    tier,
+    tier: safeTier,
+    plotIndex,
     logs: config.logs,
     logValue: config.value,
     alive: true,
@@ -723,6 +723,8 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
     treeOccluderMeshes.push(child);
   });
   trees.push(tree);
+  tree.group.visible = plots[plotIndex]?.unlocked ?? true;
+  tree.rangeIndicator.visible = false;
   return tree;
 };
 
