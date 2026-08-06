@@ -49,15 +49,22 @@
     <div class="top-hud game-ui" aria-label="Kaynaklar">
       <div class="resource-pill"><span class="cash-icon" aria-hidden="true"></span><strong id="gold-count">0</strong></div>
       <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
+      <div class="resource-pill"><span class="stock-icon">▣</span><strong id="stock-count">0</strong></div>
     </div>
 
     <div class="side-actions game-ui">
-      <button id="offers-button" class="square-button" aria-label="Teklifler">
-        <span>↔</span><small>Teklif</small><b id="offer-badge" class="badge">1</b>
+      <button id="offers-button" class="square-button" aria-label="Alıcılar">
+        <span>↔</span><small>Alıcı</small><b id="offer-badge" class="badge hidden">1</b>
       </button>
-      <button id="upgrades-button" class="square-button" aria-label="Geliştirmeler">
-        <span>↑</span><small>Geliştir</small>
+      <button id="upgrades-button" class="square-button" aria-label="Yetenekler">
+        <span>↑</span><small>Yetenek</small><b id="skill-badge" class="badge hidden">1</b>
       </button>
+    </div>
+
+    <div class="level-bar game-ui" aria-label="Seviye ilerlemesi">
+      <span class="level-chip">Sv <strong id="level-value">1</strong></span>
+      <div class="level-track"><div id="level-fill" class="level-fill"></div></div>
+      <small id="level-text">0 / 20 XP</small>
     </div>
 
     <div id="action-hint" class="action-hint game-ui hidden"></div>
@@ -68,24 +75,21 @@
 
     <div id="panel-backdrop" class="panel-backdrop hidden"></div>
 
-    <section id="offer-panel" class="game-panel hidden" aria-label="Teklif paneli">
-      <header><div><span class="eyebrow">SÜRELİ TEKLİF</span><h2>Odun siparişi</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
-      <div class="offer-trade">
-        <div><span class="big-log">▰</span><strong id="offer-wood">8</strong><small>odun</small></div>
-        <span class="trade-arrow">→</span>
-        <div><span class="cash-icon big-cash" aria-hidden="true"></span><strong id="offer-gold">20</strong><small>para</small></div>
-      </div>
-      <div class="timer-row"><span>Kalan süre</span><strong id="offer-time">00:45</strong></div>
-      <button id="sell-button" class="primary-button">Stoğu sat</button>
-      <p id="offer-status" class="panel-note">İstasyon stoğu: 0 / 8</p>
+    <section id="offer-panel" class="game-panel hidden" aria-label="Alıcı paneli">
+      <header><div><span class="eyebrow">TEZGÂHTAKİ ALICILAR</span><h2>Odun teklifleri</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <div id="offer-list" class="offer-list"></div>
+      <p id="offer-status" class="panel-note">İstasyon stoğu: 0 kütük</p>
     </section>
 
-    <section id="upgrade-panel" class="game-panel hidden" aria-label="Geliştirme paneli">
-      <header><div><span class="eyebrow">GELİŞTİRMELER</span><h2>Daha hızlı büyü</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+    <section id="upgrade-panel" class="game-panel hidden" aria-label="Yetenek paneli">
+      <header><div><span class="eyebrow">YETENEKLER</span><h2>Ustalığını geliştir</h2></div><button class="close-panel" aria-label="Kapat">×</button></header>
+      <p id="skill-points" class="panel-note points-note">Dağıtılmamış puan: 0</p>
       <div class="upgrade-list">
-        <button class="upgrade-card" data-upgrade="capacity"><span class="upgrade-symbol">▰</span><span><strong>Taşıma kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b id="capacity-cost" class="cash-cost">15</b></button>
-        <button class="upgrade-card" data-upgrade="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b id="damage-cost" class="cash-cost">25</b></button>
-        <button class="upgrade-card" data-upgrade="axeSpeed"><span class="upgrade-symbol">⌁</span><span><strong>Balta hızı</strong><small id="axe-speed-value">1.00 sn → 0.82 sn</small></span><b id="axe-speed-cost" class="wood-cost">5</b></button>
+        <button class="upgrade-card" data-skill="damage"><span class="upgrade-symbol">↯</span><span><strong>Balta hasarı</strong><small id="damage-value">1 → 2</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="axeSpeed"><span class="upgrade-symbol">⌁</span><span><strong>Balta hızı</strong><small id="axe-speed-value">1.00 sn → 0.82 sn</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="capacity"><span class="upgrade-symbol">▰</span><span><strong>Sırt kapasitesi</strong><small id="capacity-value">5 → 7</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="speed"><span class="upgrade-symbol">»</span><span><strong>Yürüme hızı</strong><small id="speed-value">4.8 → 5.2</small></span><b class="point-cost">1</b></button>
+        <button class="upgrade-card" data-skill="haggle"><span class="upgrade-symbol">◈</span><span><strong>Pazarlık</strong><small id="haggle-value">%100 → %110</small></span><b class="point-cost">1</b></button>
       </div>
     </section>
 
