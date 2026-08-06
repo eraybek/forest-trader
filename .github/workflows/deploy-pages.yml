@@ -5,17 +5,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Derlenen çıktı doğrudan gh-pages dalına yazılır.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
-# Aynı anda tek yayın; süren bir yayın iptal edilmez.
+# Aynı anda tek dağıtım çalışsın, ancak süren bir dağıtım iptal edilmesin:
+# Pages dağıtımını ortasında kesmek GitHub tarafında asılı kalan bir deployment
+# bırakıp sonraki denemeleri de bloke edebiliyor.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,19 +32,19 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
-      # Pages dağıtım API'si (actions/deploy-pages) bu depoda dağıtımı
-      # deployment_in_progress durumunda askıda bırakıyordu. Çıktıyı gh-pages
-      # dalına push etmek, Pages'in dal tabanlı yayın hattını kullanır ve o
-      # API'ye hiç dokunmaz.
-      - name: Publish to gh-pages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          touch dist/.nojekyll
-          cd dist
-          git init -q -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Publish ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" gh-pages
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
