@@ -409,7 +409,6 @@ const plots: PlotData[] = [
   { minZ: -25, maxZ: 25, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
 ];
 
-const traderPosition = new THREE.Vector3(COMPOUND_EAST, 0, 0);
 const stationBuildPosition = new THREE.Vector3(-14, 0, 9);
 const sawmillBuildPosition = new THREE.Vector3(-14, 0, -9);
 const clerkBuildPosition = new THREE.Vector3(-9.5, 0, 0);
@@ -487,7 +486,8 @@ const state = {
   skills: { damage: 1, axeSpeed: 1, capacity: 1, speed: 1, haggle: 1 } as Record<SkillKind, number>,
 };
 
-let trader!: TraderPost;
+let logTrader!: TraderPost;
+let plankTrader!: TraderPost;
 let customerSpawnClock = 5;
 
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
@@ -924,7 +924,7 @@ const createBuildZone = (
 // Takas tezgâhı çitin üstünde bir sınırdır: oyuncu batı (iç) yüzünde durur,
 // alıcılar doğu (yol) yüzüne gelir. Üstten bakışta hiçbir şeyi örtmemesi için
 // bilerek çatısızdır — girilebilen hiçbir yapıya çatı koymuyoruz.
-const createTradingPost = (position: THREE.Vector3): TraderPost => {
+const createTradingPost = (position: THREE.Vector3, isPlankPost = false): TraderPost => {
   const group = new THREE.Group();
   group.position.copy(position);
 
@@ -949,7 +949,7 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
   // Oyuncunun satışı tetiklemek için durduğu halka (iç taraf).
   const sellRing = new THREE.Mesh(
     new THREE.RingGeometry(1.0, 1.22, 36),
-    new THREE.MeshBasicMaterial({ color: 0x8fe06a, transparent: true, opacity: 0.68, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: isPlankPost ? 0xe5aa53 : 0x8fe06a, transparent: true, opacity: 0.68, side: THREE.DoubleSide }),
   );
   sellRing.rotation.x = -Math.PI / 2;
   sellRing.position.set(-1.5, 0.05, 0);
@@ -975,17 +975,29 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
 // Tezgâhtaki kütük yığını istasyon stoğunu yansıtır; kalabalık olmasın diye
 // görsel olarak sınırlanır.
 const rebuildTraderStock = () => {
-  if (!trader) return;
-  trader.stockPile.clear();
-  const shown = Math.min(state.stock, 12);
-  for (let index = 0; index < shown; index += 1) {
-    const log = makeLogMesh(0.5);
-    const column = index % 4;
-    const row = Math.floor(index / 4);
-    log.rotation.z = 0;
-    log.rotation.y = Math.PI / 2;
-    log.position.set(0, row * 0.2, (column - 1.5) * 0.52);
-    trader.stockPile.add(log);
+  if (logTrader) {
+    logTrader.stockPile.clear();
+    const shown = Math.min(state.stock, 12);
+    for (let index = 0; index < shown; index += 1) {
+      const log = makeLogMesh(0.5);
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      log.rotation.z = 0;
+      log.rotation.y = Math.PI / 2;
+      log.position.set(0, row * 0.2, (column - 1.5) * 0.52);
+      logTrader.stockPile.add(log);
+    }
+  }
+  if (plankTrader) {
+    plankTrader.stockPile.clear();
+    const shown = Math.min(state.sawmillOutputPlanks, 12);
+    for (let index = 0; index < shown; index += 1) {
+      const plank = instantiate('resource-wood', 0.32);
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      plank.position.set(0, row * 0.16, (column - 1.5) * 0.45);
+      plankTrader.stockPile.add(plank);
+    }
   }
 };
 
@@ -1005,7 +1017,8 @@ const isClearForTree = (position: THREE.Vector3) => {
   if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
   if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.8)) return false;
   if (buildZones.some((zone) => position.distanceTo(zone.position) < 4.2)) return false;
-  if (position.distanceTo(trader.sellPosition) < 4.8) return false;
+  if (logTrader && position.distanceTo(logTrader.sellPosition) < 4.8) return false;
+  if (plankTrader && position.distanceTo(plankTrader.sellPosition) < 4.8) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
 };
 
@@ -1063,7 +1076,9 @@ const createFenceRun = (from: THREE.Vector3, to: THREE.Vector3) => {
   return fence;
 };
 
-trader = createTradingPost(traderPosition);
+logTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, 4.5), false);
+plankTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, -4.5), true);
+plankTrader.group.visible = false;
 
 // Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
 // Yalnızca yol sınırı çitle ayrılır. Oyuncunun arazisi batı, kuzey ve güneyde
@@ -1089,12 +1104,6 @@ const dividerFences: THREE.Group[] = [
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
   createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(-25, 0, 25)),
 ];
-
-// Alıcı şeridi: yol tarafında, çitle çevrili dar bir koridor. Kuzey ucu açık
-// (alıcılar oradan girer), güney ucu ve yol yüzü kapalı.
-const LANE_OUTER = COMPOUND_EAST + 3.2;
-createFenceRun(new THREE.Vector3(LANE_OUTER, 0, 12), new THREE.Vector3(LANE_OUTER, 0, -2.4));
-createFenceRun(new THREE.Vector3(LANE_OUTER, 0, -2.4), new THREE.Vector3(COMPOUND_EAST, 0, -2.4));
 
 plots.forEach(buildPlotFences);
 plots.forEach(populatePlot);
@@ -1181,6 +1190,8 @@ const createSawmill = () => {
   group.scale.setScalar(0.02);
   addTween(0.7, (progress) => group.scale.setScalar(easeOutBack(progress)), () => group.scale.setScalar(1));
   state.sawmillBuilt = true;
+  plankTrader.group.visible = true;
+  showToast('Bıçkıhane ve Tahta Tezgâhı kuruldu!');
 };
 
 const rebuildSawmillInputPile = () => {
@@ -1265,8 +1276,8 @@ let clerkVisual: THREE.Group | null = null;
 
 const hireClerk = () => {
   const group = new THREE.Group();
-  // Tezgâhtar tam olarak yeşil dairenin merkezinde durur.
-  group.position.copy(trader.sellPosition);
+  // Tezgâhtar Kütük tezgâhı yeşil dairesinde durur.
+  group.position.copy(logTrader.sellPosition);
   const visual = createCustomerVisual(2);
   group.add(visual);
   group.rotation.y = Math.PI / 2;
@@ -1670,43 +1681,47 @@ const removeCustomer = (customer: CustomerData) => {
 
 // Tek sıra: öndeki ayrılınca arkadakiler birer basamak öne yürür.
 const advanceQueue = () => {
-  const queued = customers
-    .filter((customer) => customer.state !== 'leaving')
-    .sort((a, b) => a.slotIndex - b.slotIndex);
-  queued.forEach((customer, position) => {
-    if (customer.slotIndex === position) return;
-    customer.slotIndex = position;
-    customer.state = 'arriving';
-    customer.bubble.visible = false;
-    customer.path = [trader.slots[position].clone()];
-  });
+  for (const wantsPlanks of [false, true]) {
+    const queued = customers
+      .filter((customer) => customer.wantsPlanks === wantsPlanks && customer.state !== 'leaving')
+      .sort((a, b) => a.slotIndex - b.slotIndex);
+    const targetTrader = wantsPlanks ? plankTrader : logTrader;
+    queued.forEach((customer, position) => {
+      if (customer.slotIndex === position) return;
+      customer.slotIndex = position;
+      customer.state = 'arriving';
+      customer.bubble.visible = false;
+      customer.path = [targetTrader.slots[position].clone()];
+    });
+  }
 };
 
 const spawnCustomer = () => {
+  // Bıçkıhane kurulmadan tahta isteyen alıcı gelmez.
+  const wantsPlanks = state.sawmillBuilt && seededRandom() < 0.5;
+  const targetTrader = wantsPlanks ? plankTrader : logTrader;
+
   const slotIndex = [0, 1, 2, 3].find(
-    (index) => !customers.some((customer) => customer.slotIndex === index && customer.state !== 'leaving'),
+    (index) => !customers.some((customer) => customer.wantsPlanks === wantsPlanks && customer.slotIndex === index && customer.state !== 'leaving'),
   );
   if (slotIndex === undefined) return;
 
   const group = new THREE.Group();
   const visual = createCustomerVisual(customers.length + Math.floor(ambientTime));
-  // Bıçkıhane kurulmadan tahta isteyen alıcı gelmez.
-  const wantsPlanks = state.sawmillBuilt && seededRandom() < 0.45;
   const wantAmount = wantsPlanks ? 2 + Math.floor(seededRandom() * 4) : 3 + Math.floor(seededRandom() * 5);
   const offerGold = Math.round(wantAmount * (wantsPlanks ? 60 : 25) * haggleBonus());
   const bubble = makeOfferBubble(wantAmount, wantsPlanks);
   bubble.visible = false;
   group.add(visual, bubble);
-  group.position.copy(trader.spawnPosition);
+  group.position.copy(targetTrader.spawnPosition);
   world.add(group);
 
-  const slot = trader.slots[slotIndex];
+  const slot = targetTrader.slots[slotIndex];
   const maxPatience = 34 + seededRandom() * 12;
   customers.push({
     group,
     visual,
     state: 'arriving',
-    // Şerit boyunca doğrudan kendi sırasına yürür.
     path: [slot.clone()],
     slotIndex,
     wantsPlanks,
@@ -1724,8 +1739,8 @@ const spawnCustomer = () => {
 const sendCustomerAway = (customer: CustomerData) => {
   customer.bubble.visible = false;
   customer.state = 'leaving';
-  // Şeritten kuzeye doğru çıkar; 'leaving' olduğu için sıra hesabına girmez.
-  customer.path = [trader.exitPosition.clone()];
+  const targetTrader = customer.wantsPlanks ? plankTrader : logTrader;
+  customer.path = [targetTrader.exitPosition.clone()];
   advanceQueue();
 };
 
@@ -1843,21 +1858,27 @@ let sellClock = 0;
 const updateTrader = (delta: number) => {
   customerSpawnClock -= delta;
   if (customerSpawnClock <= 0) {
-    customerSpawnClock = 9 + seededRandom() * 7;
+    customerSpawnClock = 6 + seededRandom() * 5;
     spawnCustomer();
   }
 
-  // Satış tezgâhın arkasında durunca işler; stok yeten ilk alıcıya satılır.
-  if (trader.sellPosition.distanceTo(player.position) > 1.35) {
+  const nearLog = logTrader.sellPosition.distanceTo(player.position) < 1.6;
+  const nearPlank = plankTrader.group.visible && plankTrader.sellPosition.distanceTo(player.position) < 1.6;
+
+  if (!nearLog && !nearPlank) {
     sellClock = 0;
     return;
   }
   sellClock += delta;
   if (sellClock < 0.35) return;
   sellClock = 0;
-  const ready = customers.find(
-    (customer) => customer.state === 'waiting' && !customer.served && availableFor(customer) >= customer.wantAmount,
-  );
+
+  const ready = customers.find((customer) => {
+    if (customer.state !== 'waiting' || customer.served) return false;
+    if (nearLog && !customer.wantsPlanks && availableFor(customer) >= customer.wantAmount) return true;
+    if (nearPlank && customer.wantsPlanks && availableFor(customer) >= customer.wantAmount) return true;
+    return false;
+  });
   if (ready) sellToCustomer(ready);
 };
 
@@ -2083,8 +2104,9 @@ const collidesAt = (position: THREE.Vector3) => {
   for (const tree of trees) {
     if (tree.alive && position.distanceToSquared(tree.group.position) < 0.68 * 0.68) return true;
   }
-  if (trader) {
-    const playerRadius = 0.36;
+  const playerRadius = 0.36;
+  for (const trader of [logTrader, plankTrader]) {
+    if (!trader || !trader.group.visible) continue;
     for (const collider of trader.colliders) {
       if (
         Math.abs(position.x - collider.center.x) < collider.halfX + playerRadius
@@ -2251,25 +2273,26 @@ const updateContextHint = () => {
   let message = '';
   const nearbyBuildZone = buildZones.find((zone) => zone.active && !zone.built && zone.position.distanceTo(player.position) < 1.9);
   const nearbyGroundLog = groundLogs.some((log) => !log.collecting && log.mesh.position.distanceTo(player.position) < 1.6);
-  const nearSellPad = trader.sellPosition.distanceTo(player.position) < 1.6;
+  const nearLogSell = logTrader.sellPosition.distanceTo(player.position) < 1.6;
+  const nearPlankSell = plankTrader.group.visible && plankTrader.sellPosition.distanceTo(player.position) < 1.6;
   const nearStation = stations.some((station) => station.position.distanceTo(player.position) < 3.05);
-  const waiting = customers.filter((customer) => customer.state === 'waiting' && !customer.served);
+
   if (nearbyBuildZone) {
     const resourceName = nearbyBuildZone.cost.type === 'money' ? 'para' : 'odun';
     const hasResource = resourceAmount(nearbyBuildZone.cost.type) > 0;
     message = hasResource
       ? `İnşa ediliyor · ${nearbyBuildZone.paid}/${nearbyBuildZone.cost.amount} ${resourceName}`
       : `${nearbyBuildZone.cost.amount - nearbyBuildZone.paid} ${resourceName} gerekli`;
-  } else if (nearSellPad) {
-    if (waiting.length === 0) message = `Tezgâh hazır · stok ${state.stock} kütük · alıcı bekleniyor`;
-    else {
-      const best = waiting.find((customer) => availableFor(customer) >= customer.wantAmount);
-      const front = waiting[0];
-      const frontGoods = front.wantsPlanks ? 'tahta' : 'kütük';
-      message = best
-        ? `Satılıyor · ${best.wantAmount} ${best.wantsPlanks ? 'tahta' : 'kütük'} → +${best.offerGold} para`
-        : `Stok yetersiz · ${front.wantAmount} ${frontGoods} isteniyor, elinde ${availableFor(front)}`;
-    }
+  } else if (nearLogSell) {
+    const logWaiting = customers.filter((c) => !c.wantsPlanks && c.state === 'waiting' && !c.served);
+    message = logWaiting.length > 0
+      ? `Kütük satılıyor · ${logWaiting[0].wantAmount} kütük → +${logWaiting[0].offerGold} para`
+      : `Kütük tezgâhı hazır · stok ${state.stock} kütük`;
+  } else if (nearPlankSell) {
+    const plankWaiting = customers.filter((c) => c.wantsPlanks && c.state === 'waiting' && !c.served);
+    message = plankWaiting.length > 0
+      ? `Tahta satılıyor · ${plankWaiting[0].wantAmount} tahta → +${plankWaiting[0].offerGold} para`
+      : `Tahta tezgâhı hazır · üretilen tahta ${state.sawmillOutputPlanks}`;
   } else if (state.sawmillBuilt && sawmillBuildPosition.distanceTo(player.position) < 2.8) {
     message = state.sawmillInputLogs > 0
       ? `Bıçkıhane çalışıyor · depoda ${state.sawmillInputLogs} kütük → ${state.sawmillOutputPlanks} tahta`
