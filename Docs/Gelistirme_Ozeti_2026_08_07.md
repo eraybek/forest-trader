@@ -25,6 +25,7 @@
 5. **Kendi Alanımızı Büyütme ve Satın Alma Alanı Konumlandırma:**
    - Oyuncunun hareket edebildiği batı sınırı (`COMPOUND_WEST`) `-19.5` seviyesinden `-25.0` seviyesine çekilerek ana alan genişletildi.
    - Çit çizgisinde/arkasında kalan alan açma kareleri (Build Zone), oyuncunun kendi yürüyebildiği iç alana (`Z = 6.8` ve `Z = -6.8`) çekildi.
+   - **Satın Alma Dolum Animasyonu:** Yeşil dolum alanı soldan sağa çapraz yerine ekranda tam olarak **aşağıdan yukarıya** (dikey) dolacak şekilde 45 derece döndürülerek hizalandı.
 
 6. **Doğrulama ve Derleme:**
    - `npm run build` komutu ile TypeScript tip ve syntax kontrolü başarıyla doğrulandı.

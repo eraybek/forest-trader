@@ -875,7 +875,12 @@ const createBuildZone = (
     new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
   progressFill.rotation.x = -Math.PI / 2;
-  progressFill.position.set(0, 0.045, progressWidth / 2);
+  progressFill.rotation.z = Math.PI / 4;
+  progressFill.position.set(
+    (progressWidth / 2) * Math.SQRT1_2,
+    0.045,
+    (progressWidth / 2) * Math.SQRT1_2,
+  );
   progressFill.scale.y = 0.001;
   group.add(progressFill);
 
@@ -2148,7 +2153,12 @@ const updateBuildZones = (delta: number) => {
         zone.paid += 1;
         const ratio = zone.paid / zone.cost.amount;
         zone.progressFill.scale.y = Math.max(0.001, ratio);
-        zone.progressFill.position.z = (zone.progressWidth / 2) * (1 - ratio);
+        const offset = (zone.progressWidth / 2) * (1 - ratio);
+        zone.progressFill.position.set(
+          offset * Math.SQRT1_2,
+          0.045,
+          offset * Math.SQRT1_2,
+        );
         updatePurchaseLabel(zone.label, zone.paid, zone.cost.amount, zone.cost.type);
         bounceGroup(zone.group);
         updateUI();
