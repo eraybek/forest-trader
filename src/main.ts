@@ -1024,10 +1024,10 @@ const createTavern = (position: THREE.Vector3) => {
     tableGroup.visible = visible;
     addBox(tableGroup, new THREE.Vector3(1.45, 0.16, 0.9), new THREE.Vector3(0, 0.82, 0), counterMaterial);
     addBox(tableGroup, new THREE.Vector3(0.18, 0.76, 0.18), new THREE.Vector3(0, 0.4, 0), darkTrunkMaterial);
-    addBox(tableGroup, new THREE.Vector3(0.72, 0.14, 0.64), new THREE.Vector3(0, 0.46, 0.92), floorAccentMaterial);
-    addBox(tableGroup, new THREE.Vector3(0.14, 0.46, 0.14), new THREE.Vector3(0, 0.23, 0.92), darkTrunkMaterial);
+    addBox(tableGroup, new THREE.Vector3(0.72, 0.14, 0.64), new THREE.Vector3(0, 0.46, -0.92), floorAccentMaterial);
+    addBox(tableGroup, new THREE.Vector3(0.14, 0.46, 0.14), new THREE.Vector3(0, 0.23, -0.92), darkTrunkMaterial);
     furnitureStage.add(tableGroup);
-    return { group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x + 0.92, 0, z)), occupied: false };
+    return { group: tableGroup, seatPosition: position.clone().add(new THREE.Vector3(x - 0.92, 0, z)), occupied: false };
   };
 
   // Başlangıçta yalnızca bir masa işlevlidir. Diğerleri sırayla parayla kurulacaktır.
@@ -1139,7 +1139,7 @@ const createTavern = (position: THREE.Vector3) => {
     { center: toWorld(-1.8, -3.35), halfX: 0.51, halfZ: 2.73, stage: 2 },
     { center: barrelPosition, halfX: 0.7, halfZ: 0.7, stage: 3 },
     ...tables.map((table) => ({ center: table.group.position.clone().add(position), halfX: 0.56, halfZ: 0.83, stage: 3 })),
-    ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 })),
+    ...tables.map((table) => ({ center: table.group.position.clone().add(position).add(new THREE.Vector3(-0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 })),
   ];
 
   tavern = {
@@ -1187,7 +1187,7 @@ const createTavern = (position: THREE.Vector3) => {
         tavern.tables.push(table);
         tavern.colliders.push(
           { center: table.group.position.clone().add(position), halfX: 0.56, halfZ: 0.83, stage: 3 },
-          { center: table.group.position.clone().add(position).add(new THREE.Vector3(0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 },
+          { center: table.group.position.clone().add(position).add(new THREE.Vector3(-0.92, 0, 0)), halfX: 0.38, halfZ: 0.42, stage: 3 },
         );
         const nextZone = tavern.tableBuildZones[index + 1];
         if (nextZone) activateBuildZone(nextZone);
