@@ -1226,27 +1226,31 @@ const rebuildPlankPile = () => {
 
 let sawClock = 0;
 let sawUnloadClock = 0;
+let sawUnloadStreak = 0;
 let sawCollectClock = 0;
+let sawCollectStreak = 0;
 const SAW_INTERVAL = 2.4;
 
 const updateSawmill = (delta: number) => {
   if (!state.sawmillBuilt) return;
   const distance = player.position.distanceTo(sawmillBuildPosition);
 
-  // 1. Oyuncu kütük bırakma: Bıçkıhaneye yakınsa ve elinde/sırtta kütük varsa bırakır.
+  // 1. Oyuncu kütük bırakma: Bıçkıhaneye yakınsa ve elinde/sırtta kütük varsa üstel hızla bırakır.
   if (distance < 2.5 && state.carried > state.carriedPlanks) {
     sawUnloadClock += delta;
-    if (sawUnloadClock >= 0.12) {
+    const targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, sawUnloadStreak));
+    if (sawUnloadClock >= targetInterval) {
       sawUnloadClock = 0;
+      sawUnloadStreak += 1;
       state.carried -= 1;
       state.sawmillInputLogs += 1;
       rebuildPlayerStack();
       rebuildSawmillInputPile();
       audio.unload();
-      showToast('Bıçkıhaneye kütük bırakıldı');
     }
   } else {
     sawUnloadClock = 0;
+    sawUnloadStreak = 0;
   }
 
   // 2. Bıçkıhane işleme (girdide kütük varsa tahtaya dönüştürür)
@@ -1264,21 +1268,23 @@ const updateSawmill = (delta: number) => {
     sawClock = 0;
   }
 
-  // 3. Oyuncu tahta toplama: Oyuncu yakınsa, sırtında yer varsa ve tahta üretildiyse alır.
+  // 3. Oyuncu tahta toplama: Oyuncu yakınsa, sırtında yer varsa ve tahta üretildiğinde üstel hızla alır.
   if (distance < 2.5 && state.carried < state.capacity && state.sawmillOutputPlanks > 0) {
     sawCollectClock += delta;
-    if (sawCollectClock >= 0.12) {
+    const targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, sawCollectStreak));
+    if (sawCollectClock >= targetInterval) {
       sawCollectClock = 0;
+      sawCollectStreak += 1;
       state.sawmillOutputPlanks -= 1;
       state.carried += 1;
       state.carriedPlanks += 1;
       rebuildPlayerStack();
       rebuildPlankPile();
       audio.pickup();
-      showToast('Tahta toplandı!');
     }
   } else {
     sawCollectClock = 0;
+    sawCollectStreak = 0;
   }
 };
 
@@ -1512,7 +1518,6 @@ const bounceGroup = (group: THREE.Object3D) => {
   }, () => group.scale.setScalar(1));
 };
 
-let unloadClock = 0;
 const unloadOneLog = (station: StationData) => {
   if (state.carried <= 0 || stackMeshes.length === 0) return;
   const topLog = stackMeshes[stackMeshes.length - 1];
@@ -2168,6 +2173,9 @@ const updateCollection = (delta: number) => {
   collectionCooldown = 0.07;
 };
 
+let stationUnloadClock = 0;
+let stationUnloadStreak = 0;
+
 const updateStations = (delta: number) => {
   let nearest: StationData | null = null;
   for (const station of stations) {
@@ -2177,13 +2185,16 @@ const updateStations = (delta: number) => {
     }
   }
   if (nearest && state.carried > 0) {
-    unloadClock += delta;
-    if (unloadClock >= 0.08) {
-      unloadClock = 0;
+    stationUnloadClock += delta;
+    const targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, stationUnloadStreak));
+    if (stationUnloadClock >= targetInterval) {
+      stationUnloadClock = 0;
+      stationUnloadStreak += 1;
       unloadOneLog(nearest);
     }
   } else {
-    unloadClock = 0;
+    stationUnloadClock = 0;
+    stationUnloadStreak = 0;
   }
 };
 
@@ -2203,7 +2214,8 @@ const updateBuildZones = (delta: number) => {
     const distance = zone.position.distanceTo(player.position);
     if (distance < 1.45 && zone.paid < zone.cost.amount && resourceAmount(zone.cost.type) > 0) {
       zone.paymentClock += delta;
-      if (zone.paymentClock >= 0.1) {
+      const targetInterval = Math.max(0.015, 0.11 * Math.pow(0.85, zone.paid));
+      if (zone.paymentClock >= targetInterval) {
         zone.paymentClock = 0;
         if (zone.cost.type === 'money') {
           state.gold -= 1;
