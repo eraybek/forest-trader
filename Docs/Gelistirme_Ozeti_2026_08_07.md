@@ -2,28 +2,28 @@
 
 ## Yapılan Güncellemeler ve İyileştirmeler (Tam Liste)
 
-1. **Kütük Bırakma İstasyonu ve Yapı Şeffaflaşması (Occlusion):**
-   - Karakter Kütük Bırakma İstasyonu'nun (veya Bıçkıhane / Tezgâhların) arkasına geçtiğinde, yapının çatısı ve gövdesi ağaçlarda olduğu gibi otomatik olarak %32 opaklığa şeffaflaşır. Karakter yapının arkasında kesinlikle kaybolmaz.
+1. **Tezgâh Stok Mekaniği & Alışveriş Şartı:**
+   - Kütük ve Tahta Tezgâhlarına ayrı stok sayaçları (`state.logStallStock`, `state.plankStallStock`) ve normal boyutta üst üste dizilen görsel stok yığınları eklendi.
+   - Müşteriler yalnızca tezgâha önceden mal taşınmış ve tezgâhta stok varsa alışveriş yapabilir. Taşınmamış mal satılamaz.
 
-2. **Genişletilmiş Plot 0 Başlangıç Haritası & Hiyerarşik Hizalama:**
-   - Başlangıç Plot 0 alanı genişletilerek (`X: [-32, -5]`, `Z: [-14, 14]`) tüm binalar ve otomasyon kareleri geniş, ferah ve çakışmasız iki paralel hatta oturtuldu:
-     - **Kütük Hattı (Güney):** İstasyon (`-22`) -> Kütük Taşıyıcı (`-15.5`) -> Kütük Satıcısı (`-9.5`) -> Kütük Tezgâhı (`-5`).
-     - **Tahta Hattı (Kuzey):** Bıçkıhane (`-22`) -> Tahta Taşıyıcı (`-15.5`) -> Tahta Satıcısı (`-9.5`) -> Tahta Tezgâhı (`-5`).
+2. **NPC Taşıyıcı Sırt Yükü Görseli:**
+   - Kütük ve Tahta taşıyıcı NPC'ler eşyayı ana karakter gibi tam sırtlarında hizalı şekilde taşır.
 
-3. **Milimetrik Hizalı Doğu Yolu Çitleri:**
-   - Doğu yol hattındaki tüm çitler tam olarak `X = -5.0` hizasında birleştirilerek tezgâh yanlarındaki kaymalar ve bozulmalar giderildi.
+3. **Oyuncu Başlangıç Doğuşu & Ağaç Temizliği:**
+   - Karakterin doğduğu `Vector3(-8, 0, 0)` etrafındaki 5.2 metre yarıçapta ağaç doğması engellendi. Karakter ağaç içinde doğmaz ve sıkışmaz.
 
-4. **Tezgâhların Karşısındaki Batı Ormanı Genişlemesi (Plot 3):**
-   - Tezgâhların tam karşısındaki Batı duvarında (`X = -32, Z = 0`) genişleme inşa karesi eklendi. Satın alındığında arazi batı yönüne doğru `-56.0` koordinatına kadar genişler ve batı ormanı tamamen açılır.
+4. **Kilitli Bölge Ağaçları ve Sınır Koruması:**
+   - Her bölgenin ağaçları kendi `minZ`/`maxZ` ve `COMPOUND_WEST`/`COMPOUND_EAST` sınırları içerisine hapsedildi.
+   - Henüz açılmamış kilitli bölgelerdeki ağaçların kesilmesi ve etkileşimi kesin olarak engellendi.
 
-5. **Aşamalı (Sıralı) BuildZone Sistemi:**
-   - NPC ve Bıçkıhane inşa alanları başlangıçta ekranda kalabalık etmez; ana binalar yapıldıkça ilgili otomasyon kareleri aşamalı olarak açılır.
+5. **NPC Doğuş Noktaları Düzeltmesi:**
+   - Bıçkıhane ve İstasyon taşıyıcı NPC'leri binaların/tezgâhların içinde değil, binaların önündeki açık alanda doğar.
 
-6. **Üstel (Eksponansiyel) Bırakma / Boşaltma Hız Eğrisi:**
-   - Eşya ve kaynak bırakma/boşaltma işlemleri üstel hızlandırma eğrisi ile serileştirildi.
+6. **Doğu Yol Çitlerinin Hizalanması:**
+   - Tüm Doğu duvarı çitleri kesintisiz `X = -5.0` ekseninde milimetrik hizada birleştirildi.
 
-7. **Açılan Yeni Bölgelerin Çitle Çevrilmesi:**
-   - Her yeni orman açıldığında dış perimetre sınırları yeni çitlerle kapatılır.
+7. **Yapı Şeffaflaşması (Occlusion):**
+   - Karakter Kütük Bırakma İstasyonu, Bıçkıhane veya Tezgâhların arkasına geçtiğinde yapının çatısı ve gövdesi otomatik olarak %32 opaklığa şeffaflaşır.
 
 8. **Doğrulama ve Derleme:**
    - `npm run build` komutu ile TypeScript ve Vite derleme kontrolleri 0 hata ile doğrulandı.

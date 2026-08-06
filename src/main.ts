@@ -482,6 +482,8 @@ const state = {
   sawmillInputLogs: 0,
   sawmillOutputPlanks: 0,
   carriedPlanks: 0,
+  logStallStock: 0,
+  plankStallStock: 0,
   sawmillBuilt: false,
   clerkHired: false,
   capacity: 5,
@@ -1003,25 +1005,25 @@ const createTradingPost = (position: THREE.Vector3, isPlankPost = false): Trader
 const rebuildTraderStock = () => {
   if (logTrader) {
     logTrader.stockPile.clear();
-    const shown = Math.min(state.stock, 12);
+    const shown = Math.min(state.logStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
-      const log = makeLogMesh(0.5);
+      const log = makeLogMesh(0.65);
       const column = index % 4;
       const row = Math.floor(index / 4);
       log.rotation.z = 0;
       log.rotation.y = Math.PI / 2;
-      log.position.set(0, row * 0.2, (column - 1.5) * 0.52);
+      log.position.set(-0.1, 0.15 + row * 0.22, (column - 1.5) * 0.48);
       logTrader.stockPile.add(log);
     }
   }
   if (plankTrader) {
     plankTrader.stockPile.clear();
-    const shown = Math.min(state.sawmillOutputPlanks, 12);
+    const shown = Math.min(state.plankStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
-      const plank = instantiate('resource-wood', 0.32);
+      const plank = instantiate('resource-wood', 0.42);
       const column = index % 4;
       const row = Math.floor(index / 4);
-      plank.position.set(0, row * 0.16, (column - 1.5) * 0.45);
+      plank.position.set(-0.1, 0.12 + row * 0.18, (column - 1.5) * 0.45);
       plankTrader.stockPile.add(plank);
     }
   }
@@ -1037,41 +1039,43 @@ const seededRandom = (() => {
 
 // Üs merkezi: ağaç kademeleri bu noktaya olan uzaklığa göre belirlenir.
 // Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
-const buildingSpots = [stationBuildPosition, sawmillBuildPosition, logClerkBuildPosition, plankClerkBuildPosition];
+const PLAYER_SPAWN = new THREE.Vector3(-8, 0, 0);
+
+const buildingSpots = [
+  stationBuildPosition,
+  sawmillBuildPosition,
+  logClerkBuildPosition,
+  plankClerkBuildPosition,
+  logCarrierBuildPosition,
+  plankCarrierBuildPosition,
+];
 
 const isClearForTree = (position: THREE.Vector3) => {
   if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
-  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.8)) return false;
-  if (buildZones.some((zone) => position.distanceTo(zone.position) < 4.2)) return false;
-  if (logTrader && position.distanceTo(logTrader.sellPosition) < 4.8) return false;
-  if (plankTrader && position.distanceTo(plankTrader.sellPosition) < 4.8) return false;
+  if (position.distanceTo(PLAYER_SPAWN) < 5.2) return false;
+  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.5)) return false;
+  if (buildZones.some((zone) => position.distanceTo(zone.position) < 3.8)) return false;
+  if (logTrader && position.distanceTo(logTrader.sellPosition) < 4.5) return false;
+  if (plankTrader && position.distanceTo(plankTrader.sellPosition) < 4.5) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
 };
 
 const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
 const TIER_HEIGHTS = [3.6, 4.4, 5.2];
 
-let treeVariant = 0;
 const populatePlot = (plot: PlotData) => {
+  const plotIndex = plots.indexOf(plot);
   const area = (plot.maxZ - plot.minZ) * (COMPOUND_EAST - COMPOUND_WEST);
   const target = Math.round(area / 7.5);
   for (let index = 0; index < target; index += 1) {
     let position = new THREE.Vector3();
     let attempts = 0;
     do {
-      position = new THREE.Vector3(
-        COMPOUND_WEST + 1 + seededRandom() * (COMPOUND_EAST - COMPOUND_WEST - 2),
-        0,
-        plot.minZ + 1 + seededRandom() * (plot.maxZ - plot.minZ - 2),
-      );
+      position.x = COMPOUND_WEST + 1.8 + seededRandom() * (COMPOUND_EAST - COMPOUND_WEST - 3.6);
+      position.z = plot.minZ + 1.8 + seededRandom() * (plot.maxZ - plot.minZ - 3.6);
       attempts += 1;
-    } while (!isClearForTree(position) && attempts < 160);
-    if (!isClearForTree(position)) continue;
-    const tree = makeTree(position, treeVariant, plot.tier);
-    treeVariant += 1;
-    plot.trees.push(tree);
-    tree.group.visible = plot.unlocked;
-    tree.rangeIndicator.visible = false;
+    } while (!isClearForTree(position) && attempts < 40);
+    if (attempts < 40) makeTree(position, plot.tier, plotIndex);
   }
 };
 
@@ -1324,7 +1328,7 @@ const updateSawmill = (delta: number) => {
 
 const spawnLogCarrier = () => {
   const group = new THREE.Group();
-  group.position.copy(stationBuildPosition);
+  group.position.copy(stationBuildPosition).add(new THREE.Vector3(0, 0, 2.2));
   const visual = createCustomerVisual(5);
   group.add(visual);
   world.add(group);
@@ -1342,7 +1346,7 @@ const spawnLogCarrier = () => {
 
 const spawnPlankCarrier = () => {
   const group = new THREE.Group();
-  group.position.copy(sawmillBuildPosition);
+  group.position.copy(sawmillBuildPosition).add(new THREE.Vector3(0, 0, 2.2));
   const visual = createCustomerVisual(7);
   group.add(visual);
   world.add(group);
@@ -1879,39 +1883,16 @@ const payoutToPlayer = (from: THREE.Vector3, gold: number) => {
 };
 
 const availableFor = (customer: CustomerData) =>
-  customer.wantsPlanks
-    ? (state.carriedPlanks + state.sawmillOutputPlanks)
-    : (state.carried + state.stock);
+  customer.wantsPlanks ? state.plankStallStock : state.logStallStock;
 
 const sellToCustomer = (customer: CustomerData) => {
   if (customer.served || customer.state !== 'waiting') return false;
   if (availableFor(customer) < customer.wantAmount) return false;
 
   if (customer.wantsPlanks) {
-    let needed = customer.wantAmount;
-    if (state.carriedPlanks >= needed) {
-      state.carriedPlanks -= needed;
-      state.carried -= needed;
-    } else {
-      needed -= state.carriedPlanks;
-      state.carried -= state.carriedPlanks;
-      state.carriedPlanks = 0;
-      state.sawmillOutputPlanks -= needed;
-    }
-    rebuildPlayerStack();
-    rebuildPlankPile();
+    state.plankStallStock = Math.max(0, state.plankStallStock - customer.wantAmount);
   } else {
-    let needed = customer.wantAmount;
-    if (state.carried - state.carriedPlanks >= needed) {
-      state.carried -= needed;
-    } else {
-      const fromCarried = state.carried - state.carriedPlanks;
-      needed -= fromCarried;
-      state.carried -= fromCarried;
-      state.stock -= needed;
-    }
-    rebuildPlayerStack();
-    rebuildStationPiles();
+    state.logStallStock = Math.max(0, state.logStallStock - customer.wantAmount);
   }
   state.gold += customer.offerGold;
   customer.served = true;
@@ -1968,7 +1949,7 @@ const updateCustomers = (delta: number) => {
   }
 };
 
-let sellClock = 0;
+let playerStallUnloadClock = 0;
 
 const updateTrader = (delta: number) => {
   customerSpawnClock -= delta;
@@ -1980,13 +1961,35 @@ const updateTrader = (delta: number) => {
   const nearLog = logTrader.sellPosition.distanceTo(player.position) < 1.6;
   const nearPlank = plankTrader.group.visible && plankTrader.sellPosition.distanceTo(player.position) < 1.6;
 
-  if (!nearLog && !nearPlank) {
-    sellClock = 0;
-    return;
+  // Oyuncunun tezgâha kütük veya tahta teslim etmesi
+  if (nearLog && state.carried > state.carriedPlanks) {
+    playerStallUnloadClock += delta;
+    if (playerStallUnloadClock >= 0.08) {
+      playerStallUnloadClock = 0;
+      const perLogValue = state.carriedValue / state.carried;
+      state.carried -= 1;
+      state.carriedValue = Math.max(0, state.carriedValue - perLogValue);
+      state.logStallStock += 1;
+      rebuildPlayerStack();
+      rebuildTraderStock();
+      audio.unload();
+    }
+  } else if (nearPlank && state.carriedPlanks > 0) {
+    playerStallUnloadClock += delta;
+    if (playerStallUnloadClock >= 0.08) {
+      playerStallUnloadClock = 0;
+      state.carried -= 1;
+      state.carriedPlanks -= 1;
+      state.plankStallStock += 1;
+      rebuildPlayerStack();
+      rebuildTraderStock();
+      audio.unload();
+    }
+  } else {
+    playerStallUnloadClock = 0;
   }
-  sellClock += delta;
-  if (sellClock < 0.35) return;
-  sellClock = 0;
+
+  if (!nearLog && !nearPlank) return;
 
   const ready = customers.find((customer) => {
     if (customer.state !== 'waiting' || customer.served) return false;
@@ -2541,14 +2544,15 @@ const updateCarriers = (delta: number) => {
     direction.y = 0;
     const distance = direction.length();
 
-    if (distance < 0.4) {
+    if (distance < 0.5) {
       if (carrier.state === 'toSource') {
         if (carrier.type === 'log' && state.stock > 0) {
           state.stock -= 1;
           carrier.state = 'toTarget';
           if (!carrier.carriedItem) {
-            carrier.carriedItem = makeLogMesh(0.6);
-            carrier.carriedItem.position.set(0, 1.2, 0.4);
+            carrier.carriedItem = makeLogMesh(0.65);
+            carrier.carriedItem.position.set(0, 1.05, -0.38);
+            carrier.carriedItem.rotation.set(0, Math.PI / 2, 0);
             carrier.group.add(carrier.carriedItem);
           }
           carrier.carriedItem.visible = true;
@@ -2557,8 +2561,9 @@ const updateCarriers = (delta: number) => {
           state.sawmillOutputPlanks -= 1;
           carrier.state = 'toTarget';
           if (!carrier.carriedItem) {
-            carrier.carriedItem = instantiate('resource-wood', 0.4);
-            carrier.carriedItem.position.set(0, 1.2, 0.4);
+            carrier.carriedItem = instantiate('resource-wood', 0.42);
+            carrier.carriedItem.position.set(0, 1.05, -0.38);
+            carrier.carriedItem.rotation.set(0, Math.PI / 2, 0);
             carrier.group.add(carrier.carriedItem);
           }
           carrier.carriedItem.visible = true;
@@ -2566,10 +2571,10 @@ const updateCarriers = (delta: number) => {
         }
       } else {
         if (carrier.type === 'log') {
-          state.stock += 1;
+          state.logStallStock += 1;
           rebuildTraderStock();
         } else {
-          state.sawmillOutputPlanks += 1;
+          state.plankStallStock += 1;
           rebuildTraderStock();
         }
         if (carrier.carriedItem) carrier.carriedItem.visible = false;
