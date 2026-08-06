@@ -387,11 +387,11 @@ world.add(mainPath);
 // çıkmaz; alıcılar yoldan gelip yalnızca tezgâhın dış yüzüne kadar
 // yaklaşabilir. Çit bu iki tarafı ayıran tek sınırdır.
 const COMPOUND_EAST = -5;
-const COMPOUND_WEST = -25.0;
+let COMPOUND_WEST = -25.0;
 const COUNTER_WIDTH = 3.2;
 
-// Arazi z ekseninde parçalara bölünür; başta yalnızca ilk parça açıktır ve
-// para biriktikçe kuzeye/güneye doğru yeni orman parçaları satın alınır.
+// Arazi parçalara bölünür; başta yalnızca ilk parça açıktır ve
+// para biriktikçe kuzeye, güneye ve batıya doğru yeni orman parçaları satın alınır.
 interface PlotData {
   minZ: number;
   maxZ: number;
@@ -406,12 +406,13 @@ const plots: PlotData[] = [
   { minZ: -9, maxZ: 9, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
   { minZ: 9, maxZ: 25, tier: 1, unlocked: false, cost: 20, fences: [], trees: [] },
   { minZ: -25, maxZ: -9, tier: 2, unlocked: false, cost: 50, fences: [], trees: [] },
+  { minZ: -25, maxZ: 25, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
 ];
 
 const traderPosition = new THREE.Vector3(COMPOUND_EAST, 0, 0);
-const stationBuildPosition = new THREE.Vector3(-13.4, 0, 4.6);
-const sawmillBuildPosition = new THREE.Vector3(-13.4, 0, -4.6);
-const clerkBuildPosition = new THREE.Vector3(-8.2, 0, 0);
+const stationBuildPosition = new THREE.Vector3(-14, 0, 9);
+const sawmillBuildPosition = new THREE.Vector3(-14, 0, -9);
+const clerkBuildPosition = new THREE.Vector3(-9.5, 0, 0);
 
 // Alıcıların tezgâha yanaştığı kısa toprak alan; yolun batı kenarına bağlanır.
 const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.2), pathMaterial);
@@ -470,8 +471,10 @@ const state = {
   stockValue: 0,
   // Bıçkıhane çıktısı. Tahta kütükten belirgin pahalıdır, bu yüzden ayrı
   // stok ve ayrı ortalama değer taşır.
-  planks: 0,
-  plankValue: 0,
+  // Bıçkıhane girdi kütükleri ve çıktı tahtaları
+  sawmillInputLogs: 0,
+  sawmillOutputPlanks: 0,
+  carriedPlanks: 0,
   sawmillBuilt: false,
   clerkHired: false,
   capacity: 5,
@@ -633,8 +636,10 @@ const stackMeshes: THREE.Object3D[] = [];
 const rebuildPlayerStack = () => {
   for (const mesh of stackMeshes) stackGroup.remove(mesh);
   stackMeshes.length = 0;
+  const carriedLogs = Math.max(0, state.carried - state.carriedPlanks);
   for (let index = 0; index < state.carried; index += 1) {
-    const item = makeLogMesh(0.78);
+    const isPlank = index >= carriedLogs;
+    const item = isPlank ? instantiate('resource-wood', 0.45) : makeLogMesh(0.78);
     item.position.set(0, 0.34 + index * 0.235, 0);
     item.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
     stackGroup.add(item);
@@ -699,6 +704,8 @@ const makeTree = (position: THREE.Vector3, variant: number, tier: number): TreeD
     if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill) return;
     child.userData.tree = tree;
     child.userData.occludable = true;
+    // Her ağaca kendi özel materyal kopyası verilir; tek bir ağaç transparan olunca tüm orman etkilenmez.
+    child.material = (child.material as THREE.Material).clone();
     const material = child.material as THREE.Material;
     material.transparent = true;
     treeOccluderMeshes.push(child);
@@ -875,12 +882,8 @@ const createBuildZone = (
     new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
   progressFill.rotation.x = -Math.PI / 2;
-  progressFill.rotation.z = Math.PI / 4;
-  progressFill.position.set(
-    (progressWidth / 2) * Math.SQRT1_2,
-    0.045,
-    (progressWidth / 2) * Math.SQRT1_2,
-  );
+  progressFill.rotation.z = Math.PI / 2;
+  progressFill.position.set(progressWidth / 2, 0.045, 0);
   progressFill.scale.y = 0.001;
   group.add(progressFill);
 
@@ -1000,9 +1003,10 @@ const buildingSpots = [stationBuildPosition, sawmillBuildPosition, clerkBuildPos
 
 const isClearForTree = (position: THREE.Vector3) => {
   if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
-  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.2)) return false;
-  if (position.distanceTo(trader.sellPosition) < 4.4) return false;
-  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.6);
+  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.8)) return false;
+  if (buildZones.some((zone) => position.distanceTo(zone.position) < 4.2)) return false;
+  if (position.distanceTo(trader.sellPosition) < 4.8) return false;
+  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
 };
 
 const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
@@ -1083,6 +1087,7 @@ const buildPlotFences = (plot: PlotData, index: number) => {
 const dividerFences: THREE.Group[] = [
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 9), new THREE.Vector3(COMPOUND_EAST, 0, 9)),
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
+  createFenceRun(new THREE.Vector3(-25, 0, -25), new THREE.Vector3(-25, 0, 25)),
 ];
 
 // Alıcı şeridi: yol tarafında, çitle çevrili dar bir koridor. Kuzey ucu açık
@@ -1134,22 +1139,31 @@ const unlockPlot = (index: number) => {
     world.remove(divider);
     divider.visible = false;
   }
-  spawnParticles(new THREE.Vector3(-12, 0.8, index === 1 ? 9 : -9), 0x9fdc61, 22);
+  if (index === 3) {
+    COMPOUND_WEST = -42.0;
+  }
+  spawnParticles(new THREE.Vector3(index === 3 ? -20 : -6, 0.8, index === 1 ? 6.5 : (index === 2 ? -6.5 : 0)), 0x9fdc61, 22);
 };
 
 plots.forEach((plot, index) => {
   if (index === 0) return;
+  const targetPos = index === 1
+    ? new THREE.Vector3(-6, 0, 6.5)
+    : index === 2
+      ? new THREE.Vector3(-6, 0, -6.5)
+      : new THREE.Vector3(-20.5, 0, 0);
   createBuildZone(
-    new THREE.Vector3(-12, 0, index === 1 ? 6.8 : -6.8),
+    targetPos,
     new THREE.Vector3(),
     { type: 'money', amount: plot.cost },
     () => unlockPlot(index),
-    index === 1 ? 'Kuzey ormanı açıldı!' : 'Derin orman açıldı!',
+    index === 1 ? 'Kuzey ormanı açıldı!' : (index === 2 ? 'Güney ormanı açıldı!' : 'Batı ormanı açıldı!'),
   );
 });
 
 // Bıçkıhane istasyondaki ham kütüğü zamanla tahtaya çevirir. Oyuncunun
 // müdahalesi gerekmez; tek şartı istasyonda kütük olması.
+const sawmillInputPile = new THREE.Group();
 const plankPile = new THREE.Group();
 
 const createSawmill = () => {
@@ -1159,6 +1173,8 @@ const createSawmill = () => {
   const logCrate = instantiate('crate', 0.8);
   logCrate.position.set(-1.25, 0, 0.4);
   group.add(logCrate);
+  sawmillInputPile.position.set(-1.25, 0.4, 0.4);
+  group.add(sawmillInputPile);
   plankPile.position.set(1.3, 0, 0);
   group.add(plankPile);
   world.add(group);
@@ -1167,10 +1183,19 @@ const createSawmill = () => {
   state.sawmillBuilt = true;
 };
 
-// Çıktı yığını tahta stoğunu yansıtır, kalabalık olmasın diye sınırlanır.
+const rebuildSawmillInputPile = () => {
+  sawmillInputPile.clear();
+  const count = Math.min(state.sawmillInputLogs, 6);
+  for (let i = 0; i < count; i += 1) {
+    const log = makeLogMesh(0.5);
+    log.position.set(0, i * 0.14, 0);
+    sawmillInputPile.add(log);
+  }
+};
+
 const rebuildPlankPile = () => {
   plankPile.clear();
-  const shown = Math.min(state.planks, 10);
+  const shown = Math.min(state.sawmillOutputPlanks, 10);
   for (let index = 0; index < shown; index += 1) {
     const plank = instantiate('resource-wood', 0.28);
     plank.position.set(0, index * 0.16, (index % 2) * 0.12);
@@ -1179,37 +1204,72 @@ const rebuildPlankPile = () => {
 };
 
 let sawClock = 0;
-const SAW_INTERVAL = 2.6;
+let sawUnloadClock = 0;
+let sawCollectClock = 0;
+const SAW_INTERVAL = 2.4;
+
 const updateSawmill = (delta: number) => {
-  if (!state.sawmillBuilt || state.stock <= 0) return;
-  sawClock += delta;
-  if (sawClock < SAW_INTERVAL) return;
-  sawClock = 0;
-  // Kütüğün kendi değeri tahtaya taşınır, böylece derin ormandan gelen odun
-  // işlendiğinde de pahalı kalır.
-  const unit = marketRate();
-  state.stock -= 1;
-  state.stockValue = Math.max(0, state.stockValue - unit);
-  state.planks += 1;
-  state.plankValue += unit * PLANK_MULTIPLIER;
-  rebuildStationPiles();
-  rebuildTraderStock();
-  rebuildPlankPile();
-  bounceGroup(plankPile);
-  updateUI();
+  if (!state.sawmillBuilt) return;
+  const distance = player.position.distanceTo(sawmillBuildPosition);
+
+  // 1. Oyuncu kütük bırakma: Bıçkıhaneye yakınsa ve elinde/sırtta kütük varsa bırakır.
+  if (distance < 2.5 && state.carried > state.carriedPlanks) {
+    sawUnloadClock += delta;
+    if (sawUnloadClock >= 0.12) {
+      sawUnloadClock = 0;
+      state.carried -= 1;
+      state.sawmillInputLogs += 1;
+      rebuildPlayerStack();
+      rebuildSawmillInputPile();
+      audio.unload();
+      showToast('Bıçkıhaneye kütük bırakıldı');
+    }
+  } else {
+    sawUnloadClock = 0;
+  }
+
+  // 2. Bıçkıhane işleme (girdide kütük varsa tahtaya dönüştürür)
+  if (state.sawmillInputLogs > 0) {
+    sawClock += delta;
+    if (sawClock >= SAW_INTERVAL) {
+      sawClock = 0;
+      state.sawmillInputLogs -= 1;
+      state.sawmillOutputPlanks += 1;
+      rebuildSawmillInputPile();
+      rebuildPlankPile();
+      bounceGroup(plankPile);
+    }
+  } else {
+    sawClock = 0;
+  }
+
+  // 3. Oyuncu tahta toplama: Oyuncu yakınsa, sırtında yer varsa ve tahta üretildiyse alır.
+  if (distance < 2.5 && state.carried < state.capacity && state.sawmillOutputPlanks > 0) {
+    sawCollectClock += delta;
+    if (sawCollectClock >= 0.12) {
+      sawCollectClock = 0;
+      state.sawmillOutputPlanks -= 1;
+      state.carried += 1;
+      state.carriedPlanks += 1;
+      rebuildPlayerStack();
+      rebuildPlankPile();
+      audio.pickup();
+      showToast('Tahta toplandı!');
+    }
+  } else {
+    sawCollectClock = 0;
+  }
 };
 
-// Tezgâhtar işe alınınca tezgâhın arkasında durur ve alıcılara kendisi satar;
-// oyuncu tezgâha koşmak zorunda kalmaz.
 let clerkVisual: THREE.Group | null = null;
 
 const hireClerk = () => {
   const group = new THREE.Group();
-  group.position.copy(trader.sellPosition).add(new THREE.Vector3(0.35, 0, 1.5));
+  // Tezgâhtar tam olarak yeşil dairenin merkezinde durur.
+  group.position.copy(trader.sellPosition);
   const visual = createCustomerVisual(2);
   group.add(visual);
-  // Tezgâha, yani +x yönüne bakar.
-  group.rotation.y = -Math.PI / 2;
+  group.rotation.y = Math.PI / 2;
   world.add(group);
   const mixer = visual.userData.mixer as THREE.AnimationMixer;
   mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
@@ -1599,10 +1659,6 @@ const grantXp = (amount: number) => {
   }
 };
 
-const marketRate = () => 25;
-// Tahta, ham kütüğün yaklaşık 2.4 katı değerinde satılır.
-const PLANK_MULTIPLIER = 2.4;
-const plankRate = () => 60;
 const haggleBonus = () => 1 + (state.skills.haggle - 1) * 0.1;
 
 const removeCustomer = (customer: CustomerData) => {
@@ -1692,25 +1748,44 @@ const payoutToPlayer = (from: THREE.Vector3, gold: number) => {
   }
 };
 
-const availableFor = (customer: CustomerData) => customer.wantsPlanks ? state.planks : state.stock;
+const availableFor = (customer: CustomerData) =>
+  customer.wantsPlanks
+    ? (state.carriedPlanks + state.sawmillOutputPlanks)
+    : (state.carried + state.stock);
 
 const sellToCustomer = (customer: CustomerData) => {
   if (customer.served || customer.state !== 'waiting') return false;
   if (availableFor(customer) < customer.wantAmount) return false;
 
   if (customer.wantsPlanks) {
-    const unit = plankRate();
-    state.planks -= customer.wantAmount;
-    state.plankValue = Math.max(0, state.plankValue - unit * customer.wantAmount);
+    let needed = customer.wantAmount;
+    if (state.carriedPlanks >= needed) {
+      state.carriedPlanks -= needed;
+      state.carried -= needed;
+    } else {
+      needed -= state.carriedPlanks;
+      state.carried -= state.carriedPlanks;
+      state.carriedPlanks = 0;
+      state.sawmillOutputPlanks -= needed;
+    }
+    rebuildPlayerStack();
+    rebuildPlankPile();
   } else {
-    const unit = marketRate();
-    state.stock -= customer.wantAmount;
-    state.stockValue = Math.max(0, state.stockValue - unit * customer.wantAmount);
+    let needed = customer.wantAmount;
+    if (state.carried - state.carriedPlanks >= needed) {
+      state.carried -= needed;
+    } else {
+      const fromCarried = state.carried - state.carriedPlanks;
+      needed -= fromCarried;
+      state.carried -= fromCarried;
+      state.stock -= needed;
+    }
+    rebuildPlayerStack();
+    rebuildStationPiles();
   }
   state.gold += customer.offerGold;
   customer.served = true;
   sendCustomerAway(customer);
-  rebuildStationPiles();
   rebuildTraderStock();
   payoutToPlayer(customer.group.position.clone(), customer.offerGold);
   audio.coin();
@@ -1725,6 +1800,10 @@ const updateCustomers = (delta: number) => {
   for (let index = customers.length - 1; index >= 0; index -= 1) {
     const customer = customers[index];
     (customer.visual.userData.mixer as THREE.AnimationMixer).update(delta);
+
+    // Kafa üstü isteği balonu YALNIZCA en öndeki (slotIndex === 0) müşteri beklerken görünür.
+    const isFrontWaiting = customer.slotIndex === 0 && customer.state === 'waiting' && !customer.served;
+    customer.bubble.visible = isFrontWaiting;
 
     if (customer.state === 'leaving') {
       playCustomerClip(customer, 'walk');
@@ -1744,7 +1823,6 @@ const updateCustomers = (delta: number) => {
       if (target && moveCustomerTowards(customer, target, delta)) customer.path.shift();
       if (customer.path.length === 0) {
         customer.state = 'waiting';
-        customer.bubble.visible = true;
         // Tezgâha (-x yönüne) dönüp beklemeye geçer.
         customer.group.rotation.y = Math.PI / 2;
       }
@@ -2067,17 +2145,16 @@ const updatePlayer = (delta: number) => {
     chopClock = 0;
   }
 
-  // Klip seçimi: kesim yürümeyi bastırır, dolu sırt taşıma duruşuna geçer.
+  // Klip seçimi: kesim yürümeyi bastırır, sırtta yük varsa elleri öne uzatmak yerine normal yürüyüş/duruş yapılır.
   const chopping = nearest !== null && !isMoving;
   if (chopping) {
-    // Balta vuruşu balta aralığına uydurulur ki animasyon ile hasar örtüşsün.
     const swing = playerAction('attack-melee-right');
     swing.timeScale = swing.getClip().duration / Math.max(0.2, state.axeInterval);
     playPlayerClip('attack-melee-right', 0.12);
   } else if (isMoving) {
-    playPlayerClip(state.carried > 0 ? 'walk' : 'walk');
+    playPlayerClip('walk');
   } else {
-    playPlayerClip(state.carried > 0 ? 'holding-both' : 'idle');
+    playPlayerClip('idle');
   }
   playerMixer.update(delta);
 
@@ -2153,11 +2230,11 @@ const updateBuildZones = (delta: number) => {
         zone.paid += 1;
         const ratio = zone.paid / zone.cost.amount;
         zone.progressFill.scale.y = Math.max(0.001, ratio);
-        const offset = (zone.progressWidth / 2) * (1 - ratio);
+        const offsetLocalY = -(zone.progressWidth / 2) * (1 - ratio);
         zone.progressFill.position.set(
-          offset * Math.SQRT1_2,
+          -offsetLocalY,
           0.045,
-          offset * Math.SQRT1_2,
+          0,
         );
         updatePurchaseLabel(zone.label, zone.paid, zone.cost.amount, zone.cost.type);
         bounceGroup(zone.group);
@@ -2193,10 +2270,10 @@ const updateContextHint = () => {
         ? `Satılıyor · ${best.wantAmount} ${best.wantsPlanks ? 'tahta' : 'kütük'} → +${best.offerGold} para`
         : `Stok yetersiz · ${front.wantAmount} ${frontGoods} isteniyor, elinde ${availableFor(front)}`;
     }
-  } else if (state.sawmillBuilt && sawmillBuildPosition.distanceTo(player.position) < 2.4) {
-    message = state.stock > 0
-      ? `Bıçkıhane çalışıyor · ${state.stock} kütük → ${state.planks} tahta`
-      : `Bıçkıhane boşta · tahta ${state.planks} · istasyona kütük getir`;
+  } else if (state.sawmillBuilt && sawmillBuildPosition.distanceTo(player.position) < 2.8) {
+    message = state.sawmillInputLogs > 0
+      ? `Bıçkıhane çalışıyor · depoda ${state.sawmillInputLogs} kütük → ${state.sawmillOutputPlanks} tahta`
+      : `Bıçkıhaneye kütük getir · üretilen tahta: ${state.sawmillOutputPlanks}`;
   } else if (nearStation && state.carried > 0) {
     message = `Kütükler bırakılıyor · istasyon stoğu ${state.stock}`;
   } else if (nearbyGroundLog && state.carried + state.pendingCollection >= state.capacity) {
