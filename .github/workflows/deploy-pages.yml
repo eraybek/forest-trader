@@ -10,9 +10,12 @@ permissions:
   pages: write
   id-token: write
 
+# Aynı anda tek dağıtım çalışsın, ancak süren bir dağıtım iptal edilmesin:
+# Pages dağıtımını ortasında kesmek GitHub tarafında asılı kalan bir
+# deployment bırakır ve sonraki denemeleri de bloke eder.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
