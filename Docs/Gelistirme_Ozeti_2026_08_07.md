@@ -2,36 +2,24 @@
 
 ## Yapılan Güncellemeler ve İyileştirmeler (Tam Liste)
 
-1. **Ayrı Tahta Tezgâhı (Plank Trading Counter):**
-   - Bıçkıhane kurulduğunda doğu hattında (`Z = -4.5`) ikinci bir **Tahta Tezgâhı** (`plankTrader`) otomatik açılır.
-   - Tahta isteyen alıcılar bu yeni tezgâhın önündeki özel sırada bekler. Kütük alıcıları ise Kütük Tezgâhında (`Z = 4.5`) bekler.
+1. **Nizami Yerleşim ve Alan Yönetimi:**
+   - İstasyon (`-14, 0, 5.0`) ve Bıçkıhane (`-14, 0, -5.0`) binaları tamamen Plot 0 iç alanına çekildi; çitlerin üzerine binme/kesişme sorunu tamamen giderildi.
+   - Hiçbir bina, inşa karesi veya ağaç birbiriyle veya çitlerle çakışmıyor.
 
-2. **Dolum Alanı Yönü:**
-   - Yeşil dolum alanı, "32 💵" yazısının tam alt kenarından başlayarak dikey olarak doğrudan yazının üzerine doğru yükselecek şekilde hizalandı.
+2. **Kesintisiz Çit Hattı:**
+   - Doğu yol hattındaki çitler tezgâh boşlukları hariç tamamen kesintisiz dizildi; aradaki boşluklar kapatıldı.
 
-3. **Karakter Animasyonu:**
-   - Sırtta yük taşınırken elleri öne uzatma (`holding-both`) animasyonu kaldırıldı. Karakter yük taşırken doğal yürüyüş (`walk`) ve duruş (`idle`) klibini kullanıyor.
+3. **3 Yöne Nizami Genişleme Alanları (BuildZone):**
+   - **Kuzey Genişleme (Plot 1):** Çitin tam ortasında `Vector3(-15, 0, -7.0)` (Z = -9 çitinin önünde nizami).
+   - **Güney Genişleme (Plot 2):** Çitin tam ortasında `Vector3(-15, 0, 7.0)` (Z = 9 çitinin önünde nizami).
+   - **Batı Genişleme (Plot 3):** Çitin tam ortasında `Vector3(-22.8, 0, 0)` (X = -25 çitinin önünde nizami).
+   - Her genişleme satın alındığında sadece ilgili yönün çit hattı açılır ve oyuncunun alanı büyür.
 
-4. **Ağaç Şeffaflığı (Occlusion) Düzeltmesi:**
-   - Ağaç modellerine bağımsız materyal kopyası (`clone()`) atanarak oyuncunun arkasında olduğu ağaç haricindeki diğer tüm ağaçların transparanlaşması engellendi. Yalnızca kamerayı kapatan ağaç şeffaflaşmaktadır.
+4. **Kütük ve Tahta Taşıyıcı / Satıcı NPC Sistemleri:**
+   - **Kütük Taşıyıcı NPC (`logCarrier`):** İstasyondan kütükleri alıp Kütük Tezgâhına taşır.
+   - **Tahta Taşıyıcı NPC (`plankCarrier`):** Bıçkıhane çıktısından tahtaları alıp Tahta Tezgâhına taşır.
+   - **Kütük Satıcı NPC (`logSeller`):** Kütük tezgâhı yeşil dairesinde durup satış yapar.
+   - **Tahta Satıcı NPC (`plankSeller`):** Tahta tezgâhı turuncu dairesinde durup satış yapar.
 
-5. **Müşteri Yolu Çitlerinin Kaldırılması:**
-   - Tezgâh önündeki alıcı sırası ve yol üzerindeki çitler tamamen kaldırıldı. Müşteriler çite takılmadan akıcı bir şekilde yürüyor.
-
-6. **Kafa Üstü Balon Gösterimi:**
-   - Sıradaki müşterilerin kafa üstündeki kütük balonu gizlendi. Yalnızca en önde tezgâhta işlem bekleyen (`slotIndex === 0`) 1. müşterinin kafasında miktar balonu görünüyor.
-
-7. **Yapı ve İnşa Alanı Çakışmasızlığı:**
-   - İstasyon (`-14, 9`), Bıçkıhane (`-14, -9`), Tezgâhtar (`-9.5, 0`), Orman Genişlemeleri (Kuzey: `-6, 6.5`, Güney: `-6, -6.5`, Batı: `-20.5, 0`) koordinatları birbirinden geniş mesafelerle ayrıldı. Ağaçların bu alanlara doğması engellendi.
-
-8. **Bıçkıhane (Sawmill) Elle Kütük Bırakma & Tahta Toplama:**
-   - Bıçkıhaneye kütükler oyuncu yaklaşınca elle bırakılır. Üretilen tahtalar çıkış yığınında birikir ve oyuncu tahtaları sırtına toplayıp Tahta Tezgâhında satabilir.
-
-9. **Tezgâhtar (Clerk) NPC Konumu:**
-   - İşe alınan çalışan NPC Kütük Tezgâhı yeşil dairesinin merkezinde konumlandırıldı.
-
-10. **3. Orman Genişlemesi (Batı Ormanı):**
-    - Batı yönüne 3. genişleme ormanı (`Plot 3`, `X = -42` sınırına kadar) eklendi ve satın alma karesi yerleştirildi.
-
-11. **Doğrulama ve Derleme:**
-    - `npm run build` komutu ile TypeScript tip denetimi ve Vite bundling sorunsuz doğrulandı (0 hata).
+5. **Doğrulama ve Derleme:**
+   - `npm run build` komutu ile TypeScript ve Vite derleme kontrolleri 0 hata ile doğrulandı.

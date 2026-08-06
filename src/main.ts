@@ -82,8 +82,6 @@ interface CustomerData {
   state: CustomerState;
   path: THREE.Vector3[];
   slotIndex: number;
-  // Teklif: wantAmount adet mal karşılığında offerGold para. Alıcı ya ham
-  // kütük ya da işlenmiş tahta ister.
   wantsPlanks: boolean;
   wantAmount: number;
   offerGold: number;
@@ -93,6 +91,14 @@ interface CustomerData {
   bubble: THREE.Sprite;
   served: boolean;
   currentClip: string;
+}
+
+interface CarrierData {
+  group: THREE.Group;
+  visual: THREE.Group;
+  type: 'log' | 'plank';
+  state: 'toSource' | 'toTarget';
+  carriedItem: THREE.Object3D | null;
 }
 
 interface TweenData {
@@ -409,9 +415,10 @@ const plots: PlotData[] = [
   { minZ: -25, maxZ: 25, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
 ];
 
-const stationBuildPosition = new THREE.Vector3(-14, 0, 9);
-const sawmillBuildPosition = new THREE.Vector3(-14, 0, -9);
-const clerkBuildPosition = new THREE.Vector3(-9.5, 0, 0);
+const stationBuildPosition = new THREE.Vector3(-14, 0, 5.0);
+const sawmillBuildPosition = new THREE.Vector3(-14, 0, -5.0);
+const logClerkBuildPosition = new THREE.Vector3(-8.5, 0, 4.5);
+const plankClerkBuildPosition = new THREE.Vector3(-8.5, 0, -4.5);
 
 // Alıcıların tezgâha yanaştığı kısa toprak alan; yolun batı kenarına bağlanır.
 const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 5.2), pathMaterial);
@@ -489,6 +496,8 @@ const state = {
 let logTrader!: TraderPost;
 let plankTrader!: TraderPost;
 let customerSpawnClock = 5;
+let ambientTime = 0;
+const carriers: CarrierData[] = [];
 
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
 const easeInOutCubic = (value: number) => value < 0.5
@@ -1011,7 +1020,7 @@ const seededRandom = (() => {
 
 // Üs merkezi: ağaç kademeleri bu noktaya olan uzaklığa göre belirlenir.
 // Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
-const buildingSpots = [stationBuildPosition, sawmillBuildPosition, clerkBuildPosition];
+const buildingSpots = [stationBuildPosition, sawmillBuildPosition, logClerkBuildPosition, plankClerkBuildPosition];
 
 const isClearForTree = (position: THREE.Vector3) => {
   if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
@@ -1085,12 +1094,12 @@ plankTrader.group.visible = false;
 // açık kalır — kafeste hissettirmemek için kasıtlı; oyuncuyu tutan şey çit
 // değil, arazi sınırı.
 const buildPlotFences = (plot: PlotData, index: number) => {
-  const gapTop = COUNTER_WIDTH / 2 + 0.4;
   const runs: THREE.Group[] = [];
   if (index === 0) {
-    // Doğu hattı tezgâhın iki yanından geçer; tezgâh boşluğu kapatır.
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, gapTop)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -gapTop), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
+    // Doğu hattı: Tezgâh boşlukları hariç kesintisiz çit dizilir.
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, 6.1)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 2.9), new THREE.Vector3(COMPOUND_EAST, 0, -2.9)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -6.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   } else {
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   }
@@ -1156,11 +1165,12 @@ const unlockPlot = (index: number) => {
 
 plots.forEach((plot, index) => {
   if (index === 0) return;
+  // 3 Yöne Nizami Genişleme Kareleri: Çitin tam ortasında ve oyuncunun iç alanında
   const targetPos = index === 1
-    ? new THREE.Vector3(-6, 0, 6.5)
+    ? new THREE.Vector3(-15, 0, -7.0)
     : index === 2
-      ? new THREE.Vector3(-6, 0, -6.5)
-      : new THREE.Vector3(-20.5, 0, 0);
+      ? new THREE.Vector3(-15, 0, 7.0)
+      : new THREE.Vector3(-22.8, 0, 0);
   createBuildZone(
     targetPos,
     new THREE.Vector3(),
@@ -1272,50 +1282,12 @@ const updateSawmill = (delta: number) => {
   }
 };
 
-let clerkVisual: THREE.Group | null = null;
-
-const hireClerk = () => {
-  const group = new THREE.Group();
-  // Tezgâhtar Kütük tezgâhı yeşil dairesinde durur.
-  group.position.copy(logTrader.sellPosition);
-  const visual = createCustomerVisual(2);
-  group.add(visual);
-  group.rotation.y = Math.PI / 2;
-  world.add(group);
-  const mixer = visual.userData.mixer as THREE.AnimationMixer;
-  mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
-  clerkVisual = visual;
-  state.clerkHired = true;
-};
-
-let clerkClock = 0;
-const CLERK_INTERVAL = 3.2;
-const updateClerk = (delta: number) => {
-  if (!clerkVisual) return;
-  (clerkVisual.userData.mixer as THREE.AnimationMixer).update(delta);
-  clerkClock += delta;
-  if (clerkClock < CLERK_INTERVAL) return;
-  clerkClock = 0;
-  const ready = customers.find(
-    (customer) => customer.state === 'waiting' && !customer.served && availableFor(customer) >= customer.wantAmount,
-  );
-  if (ready) sellToCustomer(ready);
-};
-
 createBuildZone(
   sawmillBuildPosition,
   new THREE.Vector3(),
   { type: 'money', amount: 15 },
   createSawmill,
   'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
-);
-
-createBuildZone(
-  clerkBuildPosition,
-  new THREE.Vector3(),
-  { type: 'money', amount: 30 },
-  hireClerk,
-  'Tezgâhtar işe alındı! Satışları o yapacak.',
 );
 
 // Oyuncu araziden hiç çıkamaz; sınır açılmış parçaların birleşimidir.
@@ -2376,9 +2348,76 @@ window.addEventListener('resize', resize);
 resize();
 updateUI();
 
+let clerkClock = 0;
+const CLERK_INTERVAL = 3.2;
+const updateClerk = (delta: number) => {
+  clerkClock += delta;
+  if (clerkClock < CLERK_INTERVAL) return;
+  clerkClock = 0;
+  if (state.clerkHired) {
+    const ready = customers.find(
+      (customer) => customer.state === 'waiting' && !customer.served && availableFor(customer) >= customer.wantAmount,
+    );
+    if (ready) sellToCustomer(ready);
+  }
+};
+
+const updateCarriers = (delta: number) => {
+  for (const carrier of carriers) {
+    (carrier.visual.userData.mixer as THREE.AnimationMixer).update(delta);
+    const sourcePos = carrier.type === 'log' ? stationBuildPosition : sawmillBuildPosition;
+    const targetTrader = carrier.type === 'log' ? logTrader : plankTrader;
+    const targetPos = targetTrader.sellPosition;
+
+    const currentTarget = carrier.state === 'toSource' ? sourcePos : targetPos;
+    const direction = currentTarget.clone().sub(carrier.group.position);
+    direction.y = 0;
+    const distance = direction.length();
+
+    if (distance < 0.4) {
+      if (carrier.state === 'toSource') {
+        if (carrier.type === 'log' && state.stock > 0) {
+          state.stock -= 1;
+          carrier.state = 'toTarget';
+          if (!carrier.carriedItem) {
+            carrier.carriedItem = makeLogMesh(0.6);
+            carrier.carriedItem.position.set(0, 1.2, 0.4);
+            carrier.group.add(carrier.carriedItem);
+          }
+          carrier.carriedItem.visible = true;
+          rebuildStationPiles();
+        } else if (carrier.type === 'plank' && state.sawmillOutputPlanks > 0) {
+          state.sawmillOutputPlanks -= 1;
+          carrier.state = 'toTarget';
+          if (!carrier.carriedItem) {
+            carrier.carriedItem = instantiate('resource-wood', 0.4);
+            carrier.carriedItem.position.set(0, 1.2, 0.4);
+            carrier.group.add(carrier.carriedItem);
+          }
+          carrier.carriedItem.visible = true;
+          rebuildPlankPile();
+        }
+      } else {
+        if (carrier.type === 'log') {
+          state.stock += 1;
+          rebuildTraderStock();
+        } else {
+          state.sawmillOutputPlanks += 1;
+          rebuildTraderStock();
+        }
+        if (carrier.carriedItem) carrier.carriedItem.visible = false;
+        carrier.state = 'toSource';
+      }
+    } else {
+      direction.normalize();
+      carrier.group.position.addScaledVector(direction, delta * 3.2);
+      carrier.group.rotation.y = Math.atan2(-direction.x, -direction.z);
+    }
+  }
+};
+
 const clock = new THREE.Clock();
 let uiClock = 0;
-let ambientTime = 0;
 
 const animate = () => {
   requestAnimationFrame(animate);
@@ -2393,6 +2432,7 @@ const animate = () => {
     updateSawmill(delta);
     updateTrader(delta);
     updateClerk(delta);
+    updateCarriers(delta);
     updateCustomers(delta);
   }
   updateTweens(delta);
