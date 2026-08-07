@@ -1043,22 +1043,24 @@ const seededRandom = (() => {
 // Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
 const PLAYER_SPAWN = new THREE.Vector3(-8, 0, 0);
 
-const buildingSpots = [
+const ALL_RESERVED_POSITIONS: THREE.Vector3[] = [
+  PLAYER_SPAWN,
   stationBuildPosition,
   sawmillBuildPosition,
   logClerkBuildPosition,
   plankClerkBuildPosition,
   logCarrierBuildPosition,
   plankCarrierBuildPosition,
+  new THREE.Vector3(COMPOUND_EAST, 0, 6.5),
+  new THREE.Vector3(COMPOUND_EAST, 0, -6.5),
+  new THREE.Vector3(-18.5, 0, -12.0),
+  new THREE.Vector3(-18.5, 0, 12.0),
+  new THREE.Vector3(-29.5, 0, 0),
 ];
 
 const isClearForTree = (position: THREE.Vector3) => {
   if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
-  if (position.distanceTo(PLAYER_SPAWN) < 5.2) return false;
-  if (buildingSpots.some((spot) => position.distanceTo(spot) < 4.5)) return false;
-  if (buildZones.some((zone) => position.distanceTo(zone.position) < 3.8)) return false;
-  if (logTrader && position.distanceTo(logTrader.sellPosition) < 4.5) return false;
-  if (plankTrader && position.distanceTo(plankTrader.sellPosition) < 4.5) return false;
+  if (ALL_RESERVED_POSITIONS.some((pos) => position.distanceTo(pos) < 4.8)) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
 };
 
@@ -1112,6 +1114,9 @@ logTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, 6.5), false);
 plankTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, -6.5), true);
 plankTrader.group.visible = false;
 
+// Tahta Tezgâhı henüz açılmamışken yoldaki boşluğu dolduran geçici çit.
+const plankStallFillerFence = createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -4.9), new THREE.Vector3(COMPOUND_EAST, 0, -8.1));
+
 // Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
 // Yalnızca yol sınırı çitle ayrılır. Oyuncunun arazisi batı, kuzey ve güneyde
 // açık kalır — kafeste hissettirmemek için kasıtlı; oyuncuyu tutan şey çit
@@ -1147,7 +1152,7 @@ const buildPlotFences = (plot: PlotData, index: number) => {
 const dividerFences: THREE.Group[] = [
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -14), new THREE.Vector3(COMPOUND_EAST, 0, -14)),
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 14), new THREE.Vector3(COMPOUND_EAST, 0, 14)),
-  createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(-32, 0, 32)),
+  createFenceRun(new THREE.Vector3(-32, 0, -14), new THREE.Vector3(-32, 0, 14)),
 ];
 
 plots.forEach(buildPlotFences);
@@ -1416,6 +1421,10 @@ const createStationAndUnlockZones = () => {
 
 const createSawmillAndUnlockZones = () => {
   createSawmill();
+  if (plankStallFillerFence) {
+    world.remove(plankStallFillerFence);
+    plankStallFillerFence.visible = false;
+  }
   createBuildZone(
     plankClerkBuildPosition,
     new THREE.Vector3(),
@@ -1556,7 +1565,8 @@ const updateTreeHealthBar = (tree: TreeData) => {
   const ratio = Math.max(0, tree.hp / tree.maxHp);
   fill.scale.x = ratio;
   fill.position.x = -(1.05 * (1 - ratio)) / 2;
-  tree.healthBar.visible = tree.alive && tree.hp < tree.maxHp;
+  const isUnlocked = plots[tree.plotIndex]?.unlocked ?? false;
+  tree.healthBar.visible = tree.alive && isUnlocked && tree.group.visible && tree.hp < tree.maxHp;
 };
 
 const spawnFallenLogs = (treePosition: THREE.Vector3, count: number, value: number) => {
@@ -1604,7 +1614,7 @@ const fellTree = (tree: TreeData) => {
 let chopClock = 0;
 
 const hitTree = (tree: TreeData) => {
-  if (!tree.alive) return;
+  if (!tree.alive || !tree.group.visible || !plots[tree.plotIndex]?.unlocked) return;
   audio.chop();
   tree.hp = Math.max(0, tree.hp - state.damage);
   updateTreeHealthBar(tree);
@@ -2449,9 +2459,8 @@ const updateTweens = (delta: number) => {
 const updateBillboards = () => {
   for (const tree of trees) {
     tree.healthBar.quaternion.copy(camera.quaternion);
-    // Tüm ormanı beyaz dairelerle kaplamak yerine yalnızca yakındaki
-    // kesilebilir ağaçların menzilini göster.
-    tree.rangeIndicator.visible = tree.alive && tree.group.position.distanceToSquared(player.position) < 3.6 * 3.6;
+    const isUnlocked = plots[tree.plotIndex]?.unlocked ?? false;
+    tree.rangeIndicator.visible = tree.alive && isUnlocked && tree.group.visible && tree.group.position.distanceToSquared(player.position) < 3.6 * 3.6;
   }
 };
 
