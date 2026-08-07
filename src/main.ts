@@ -723,7 +723,9 @@ const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, vari
     treeOccluderMeshes.push(child);
   });
   trees.push(tree);
-  tree.group.visible = plots[plotIndex]?.unlocked ?? true;
+  const plot = plots[plotIndex];
+  if (plot) plot.trees.push(tree);
+  tree.group.visible = plot?.unlocked ?? true;
   tree.rangeIndicator.visible = false;
   return tree;
 };
@@ -1009,12 +1011,11 @@ const rebuildTraderStock = () => {
     logTrader.stockPile.clear();
     const shown = Math.min(state.logStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
-      const log = makeLogMesh(0.65);
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      log.rotation.z = 0;
-      log.rotation.y = Math.PI / 2;
-      log.position.set(-0.1, 0.15 + row * 0.22, (column - 1.5) * 0.48);
+      const log = makeLogMesh(0.72);
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      log.rotation.set(0, 0, Math.PI / 2);
+      log.position.set(-0.15, 0.15 + row * 0.24, (col - 1) * 0.68);
       logTrader.stockPile.add(log);
     }
   }
@@ -1022,10 +1023,10 @@ const rebuildTraderStock = () => {
     plankTrader.stockPile.clear();
     const shown = Math.min(state.plankStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
-      const plank = instantiate('resource-wood', 0.42);
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      plank.position.set(-0.1, 0.12 + row * 0.18, (column - 1.5) * 0.45);
+      const plank = instantiate('resource-wood', 0.45);
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      plank.position.set(-0.15, 0.12 + row * 0.18, (col - 1) * 0.62);
       plankTrader.stockPile.add(plank);
     }
   }
@@ -1193,6 +1194,11 @@ const unlockPlot = (index: number) => {
   plot.unlocked = true;
   for (const run of plot.fences) run.visible = true;
   for (const tree of plot.trees) tree.group.visible = true;
+  for (const tree of trees) {
+    if (tree.plotIndex === index) {
+      tree.group.visible = true;
+    }
+  }
   const divider = dividerFences[index - 1];
   if (divider) {
     world.remove(divider);
@@ -2561,10 +2567,13 @@ const updateCarriers = (delta: number) => {
           state.stock -= 1;
           carrier.state = 'toTarget';
           if (!carrier.carriedItem) {
-            carrier.carriedItem = makeLogMesh(0.65);
-            carrier.carriedItem.position.set(0, 1.05, -0.38);
-            carrier.carriedItem.rotation.set(0, Math.PI / 2, 0);
-            carrier.group.add(carrier.carriedItem);
+            const itemGroup = new THREE.Group();
+            const log = makeLogMesh(0.75);
+            log.position.set(0, 0.85, -0.42);
+            log.rotation.set(0, 0, Math.PI / 2);
+            itemGroup.add(log);
+            carrier.group.add(itemGroup);
+            carrier.carriedItem = itemGroup;
           }
           carrier.carriedItem.visible = true;
           rebuildStationPiles();
@@ -2572,10 +2581,13 @@ const updateCarriers = (delta: number) => {
           state.sawmillOutputPlanks -= 1;
           carrier.state = 'toTarget';
           if (!carrier.carriedItem) {
-            carrier.carriedItem = instantiate('resource-wood', 0.42);
-            carrier.carriedItem.position.set(0, 1.05, -0.38);
-            carrier.carriedItem.rotation.set(0, Math.PI / 2, 0);
-            carrier.group.add(carrier.carriedItem);
+            const itemGroup = new THREE.Group();
+            const plank = instantiate('resource-wood', 0.45);
+            plank.position.set(0, 0.85, -0.42);
+            plank.rotation.set(0, 0, Math.PI / 2);
+            itemGroup.add(plank);
+            carrier.group.add(itemGroup);
+            carrier.carriedItem = itemGroup;
           }
           carrier.carriedItem.visible = true;
           rebuildPlankPile();
