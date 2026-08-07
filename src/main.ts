@@ -1130,15 +1130,15 @@ const buildPlotFences = (plot: PlotData, index: number) => {
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 4.9), new THREE.Vector3(COMPOUND_EAST, 0, -4.9)));
     runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -8.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
   } else if (index === 1) {
-    // Kuzey Genişlemesi (Plot 1): Dış sınır çitleri (Kuzey Z = -32, Batı X = -32, Doğu Z = -32..-14)
+    // Kuzey Genişlemesi (Plot 1): Doğu çiti tam aynı açı ile güneyden kuzeye değil, kuzeyden güneye çizilir.
     runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(COMPOUND_EAST, 0, -32)));
     runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(-32, 0, -14)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -32), new THREE.Vector3(COMPOUND_EAST, 0, -14)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -14), new THREE.Vector3(COMPOUND_EAST, 0, -32)));
   } else if (index === 2) {
-    // Güney Genişlemesi (Plot 2): Dış sınır çitleri (Güney Z = 32, Batı X = -32, Doğu Z = 14..32)
+    // Güney Genişlemesi (Plot 2): Doğu çiti tam aynı açı için (32 -> 14) yönünde çizilir.
     runs.push(createFenceRun(new THREE.Vector3(-32, 0, 32), new THREE.Vector3(COMPOUND_EAST, 0, 32)));
     runs.push(createFenceRun(new THREE.Vector3(-32, 0, 14), new THREE.Vector3(-32, 0, 32)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 14), new THREE.Vector3(COMPOUND_EAST, 0, 32)));
+    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 32), new THREE.Vector3(COMPOUND_EAST, 0, 14)));
   } else if (index === 3) {
     // Batı Genişlemesi (Plot 3 - Tezgâhların Tam Karşısı!): Dış sınır çitleri (Batı X = -56, Kuzey & Güney uzantıları)
     runs.push(createFenceRun(new THREE.Vector3(-56, 0, -32), new THREE.Vector3(-56, 0, 32)));
