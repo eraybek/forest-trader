@@ -374,7 +374,7 @@ for (let index = 0; index < 7; index += 1) {
   bird.add(wings);
   const scale = 0.42 + (index % 3) * 0.11;
   bird.scale.setScalar(scale);
-  bird.position.set(-18 - index * 5.2, 5.4 + (index % 3) * 1.15, -8 + (index % 4) * 5.4);
+  bird.position.set(-30 - index * 9.5, 5.4 + (index % 3) * 1.15, -22 + (index % 4) * 14.5);
   scene.add(bird);
   birds.push({ group: bird, speed: 2.3 + (index % 3) * 0.42, phase: index * 0.9, lane: bird.position.z, scale });
 }
@@ -386,18 +386,21 @@ const updateBirds = (delta: number, elapsed: number) => {
     bird.group.position.y += Math.sin(elapsed * 2.2 + bird.phase) * delta * 0.16;
     bird.group.rotation.z = Math.sin(elapsed * 6.5 + bird.phase) * 0.16;
     bird.group.scale.y = bird.scale * (0.62 + Math.abs(Math.sin(elapsed * 6.5 + bird.phase)) * 0.72);
-    if (bird.group.position.x > 25) bird.group.position.x = -25;
+    if (bird.group.position.x > 22) bird.group.position.x = -92;
   }
 };
 
 const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x78ad4f, roughness: 1 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(54, 70), grassMaterial);
+// Zemin, ızgaranın tamamen açıldığı hâli ve yolun doğusundaki manzarayı
+// örtecek kadar geniş.
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 108), grassMaterial);
 ground.rotation.x = -Math.PI / 2;
+ground.position.x = -42;
 ground.receiveShadow = true;
 world.add(ground);
 
 const pathMaterial = new THREE.MeshStandardMaterial({ color: 0xcfa365, roughness: 1 });
-const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 68), pathMaterial);
+const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 104), pathMaterial);
 mainPath.rotation.x = -Math.PI / 2;
 mainPath.rotation.z = 0;
 mainPath.position.y = 0.012;
@@ -408,27 +411,113 @@ world.add(mainPath);
 // çıkmaz; alıcılar yoldan gelip yalnızca tezgâhın dış yüzüne kadar
 // yaklaşabilir. Çit bu iki tarafı ayıran tek sınırdır.
 const COMPOUND_EAST = -5;
-let COMPOUND_WEST = -32.0;
 const COUNTER_WIDTH = 3.2;
 // Tezgâh tablasının iki yarısının merkezi: mal bir yarıda, para diğer yarıda.
 const COUNTER_HALF_OFFSET = 0.88;
 
+// --- Arazi Izgarası -------------------------------------------------------
+// Arazi eşit kareli bir ızgaradır. Oyuncu (0,0) karesiyle başlar ve komşu
+// kareleri satın alarak büyür; her kare birebir aynı ölçüde olduğu için hangi
+// yöne genişlerse genişlesin aynı büyüklükte alan kazanır. Doğu (+X) yönü
+// satın alınamaz — orası yol ve tezgâh hattıdır, ızgaranın sabit kenarıdır.
+const CELL_SIZE = 27;
+const GRID_COLUMNS = [0, -1, -2];
+const GRID_ROWS = [-1, 0, 1];
+// Kareler merkezden uzaklaştıkça pahalılaşır (indeks = ızgara mesafesi).
+const PLOT_COST_BY_RING = [0, 20, 55, 110];
+
 interface PlotData {
+  col: number;
+  row: number;
+  minX: number;
+  maxX: number;
   minZ: number;
   maxZ: number;
+  centerX: number;
+  centerZ: number;
+  ring: number;
   tier: number;
   unlocked: boolean;
   cost: number;
-  fences: THREE.Group[];
+  ground: THREE.Mesh;
+  populated: boolean;
   trees: TreeData[];
+  zone: BuildZoneData | null;
 }
 
-const plots: PlotData[] = [
-  { minZ: -14, maxZ: 14, tier: 0, unlocked: true, cost: 0, fences: [], trees: [] },
-  { minZ: -32, maxZ: -14, tier: 1, unlocked: false, cost: 20, fences: [], trees: [] },
-  { minZ: 14, maxZ: 32, tier: 2, unlocked: false, cost: 50, fences: [], trees: [] },
-  { minZ: -32, maxZ: 32, tier: 2, unlocked: false, cost: 80, fences: [], trees: [] },
-];
+const compoundGroundMaterial = new THREE.MeshStandardMaterial({ color: 0x6fa348, roughness: 1 });
+const cellGroundGeometry = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
+
+const plots: PlotData[] = [];
+for (const col of GRID_COLUMNS) {
+  for (const row of GRID_ROWS) {
+    const maxX = COMPOUND_EAST + col * CELL_SIZE;
+    const minX = maxX - CELL_SIZE;
+    const minZ = (row - 0.5) * CELL_SIZE;
+    const maxZ = (row + 0.5) * CELL_SIZE;
+    const ring = Math.abs(col) + Math.abs(row);
+    const cellGround = new THREE.Mesh(cellGroundGeometry, compoundGroundMaterial);
+    cellGround.rotation.x = -Math.PI / 2;
+    cellGround.position.set((minX + maxX) / 2, 0.012, (minZ + maxZ) / 2);
+    cellGround.receiveShadow = true;
+    cellGround.visible = ring === 0;
+    world.add(cellGround);
+    plots.push({
+      col,
+      row,
+      minX,
+      maxX,
+      minZ,
+      maxZ,
+      centerX: (minX + maxX) / 2,
+      centerZ: (minZ + maxZ) / 2,
+      ring,
+      tier: Math.min(2, ring),
+      unlocked: ring === 0,
+      cost: PLOT_COST_BY_RING[Math.min(ring, PLOT_COST_BY_RING.length - 1)],
+      ground: cellGround,
+      populated: false,
+      trees: [],
+      zone: null,
+    });
+  }
+}
+
+const plotAt = (col: number, row: number) => plots.find((plot) => plot.col === col && plot.row === row);
+const isCellUnlocked = (col: number, row: number) => plotAt(col, row)?.unlocked ?? false;
+const plotContaining = (x: number, z: number) =>
+  plots.find((plot) => x >= plot.minX && x <= plot.maxX && z >= plot.minZ && z <= plot.maxZ);
+
+// Karenin adı, ızgaradaki yönünden türetilir: "Kuzey", "Batı", "Uzak Kuzey-Batı"...
+const plotName = (plot: PlotData) => {
+  const parts: string[] = [];
+  if (plot.row < 0) parts.push('Kuzey');
+  if (plot.row > 0) parts.push('Güney');
+  if (plot.col < 0) parts.push('Batı');
+  const base = parts.join('-') || 'Merkez';
+  return plot.col <= -2 ? `Uzak ${base}` : base;
+};
+
+// Satın alma karesinin oturacağı nokta: iki kare arasındaki ortak kenarın
+// ortası, açık olan komşunun içine doğru kaydırılmış hâli.
+const PLOT_PAD_INSET = 1.9;
+const padSpotBetween = (locked: PlotData, owner: PlotData) => {
+  if (owner.col > locked.col) return new THREE.Vector3(locked.maxX + PLOT_PAD_INSET, 0, locked.centerZ);
+  if (owner.col < locked.col) return new THREE.Vector3(locked.minX - PLOT_PAD_INSET, 0, locked.centerZ);
+  if (owner.row > locked.row) return new THREE.Vector3(locked.centerX, 0, locked.maxZ + PLOT_PAD_INSET);
+  return new THREE.Vector3(locked.centerX, 0, locked.minZ - PLOT_PAD_INSET);
+};
+
+// Bir karenin içinde ileride satın alma karesi belirebilecek tüm noktalar;
+// ağaçlar bu noktaların üstüne dikilmesin diye önceden biliniyor.
+const plotPadSpots = (plot: PlotData) => {
+  const spots: THREE.Vector3[] = [];
+  for (const [dCol, dRow] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const neighbour = plotAt(plot.col + dCol, plot.row + dRow);
+    if (neighbour) spots.push(padSpotBetween(neighbour, plot));
+  }
+  return spots;
+};
 
 const stationBuildPosition = new THREE.Vector3(-22, 0, 7.5);
 const sawmillBuildPosition = new THREE.Vector3(-22, 0, -7.5);
@@ -443,17 +532,6 @@ traderPath.rotation.x = -Math.PI / 2;
 traderPath.position.set(COMPOUND_EAST + 1.9, 0.018, 0);
 traderPath.receiveShadow = true;
 world.add(traderPath);
-
-// Arazi zemini: çitin içi otlak olarak biraz daha koyu okunur.
-const compoundGround = new THREE.Mesh(
-  new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 68),
-  new THREE.MeshStandardMaterial({ color: 0x6fa348, roughness: 1 }),
-);
-compoundGround.rotation.x = -Math.PI / 2;
-compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
-compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
-compoundGround.receiveShadow = true;
-world.add(compoundGround);
 
 const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x9f5c2d, roughness: 0.85 });
 const woodEndMaterial = new THREE.MeshStandardMaterial({ color: 0xe1ad63, roughness: 0.9 });
@@ -1113,33 +1191,40 @@ const ALL_RESERVED_POSITIONS: THREE.Vector3[] = [
   plankCarrierBuildPosition,
   new THREE.Vector3(COMPOUND_EAST, 0, 6.5),
   new THREE.Vector3(COMPOUND_EAST, 0, -6.5),
-  new THREE.Vector3(-18.5, 0, -12.0),
-  new THREE.Vector3(-18.5, 0, 12.0),
-  new THREE.Vector3(-29.5, 0, 0),
 ];
-
-const isClearForTree = (position: THREE.Vector3) => {
-  if (position.x > COMPOUND_EAST - 2.6 || position.x < COMPOUND_WEST + 1.4) return false;
-  if (ALL_RESERVED_POSITIONS.some((pos) => position.distanceTo(pos) < 4.8)) return false;
-  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
-};
 
 const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
 const TIER_HEIGHTS = [3.6, 4.4, 5.2];
 
+// Ağaç dikilebilir mi: kare sınırına, yapı alanlarına, satın alma karelerine ve
+// başka ağaçlara yeterince uzak mı?
+const isClearForTree = (position: THREE.Vector3, plot: PlotData, padSpots: THREE.Vector3[]) => {
+  if (position.x > plot.maxX - 1.8 || position.x < plot.minX + 1.8) return false;
+  if (position.z > plot.maxZ - 1.8 || position.z < plot.minZ + 1.8) return false;
+  // Yol kenarındaki tezgâh şeridi her zaman boş kalır.
+  if (position.x > COMPOUND_EAST - 2.6) return false;
+  if (ALL_RESERVED_POSITIONS.some((pos) => position.distanceTo(pos) < 4.8)) return false;
+  if (padSpots.some((spot) => position.distanceTo(spot) < 3.0)) return false;
+  return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
+};
+
+// Kareler yalnızca açıldıklarında ağaçlandırılır; kilitli karelerin ağaçları
+// sahneye hiç girmez, böylece açılış maliyeti ızgara büyüdükçe artmaz.
 const populatePlot = (plot: PlotData) => {
+  if (plot.populated) return;
+  plot.populated = true;
   const plotIndex = plots.indexOf(plot);
-  const area = (plot.maxZ - plot.minZ) * (COMPOUND_EAST - COMPOUND_WEST);
-  const target = Math.round(area / 7.5);
+  const padSpots = plotPadSpots(plot);
+  const target = Math.round((CELL_SIZE * CELL_SIZE) / 7.5);
   for (let index = 0; index < target; index += 1) {
-    let position = new THREE.Vector3();
+    const position = new THREE.Vector3();
     let attempts = 0;
     do {
-      position.x = COMPOUND_WEST + 1.8 + seededRandom() * (COMPOUND_EAST - COMPOUND_WEST - 3.6);
-      position.z = plot.minZ + 1.8 + seededRandom() * (plot.maxZ - plot.minZ - 3.6);
+      position.x = plot.minX + seededRandom() * CELL_SIZE;
+      position.z = plot.minZ + seededRandom() * CELL_SIZE;
       attempts += 1;
-    } while (!isClearForTree(position) && attempts < 40);
-    if (attempts < 40) makeTree(position, plot.tier, plotIndex);
+    } while (!isClearForTree(position, plot, padSpots) && attempts < 60);
+    if (attempts < 60) makeTree(position, plot.tier, plotIndex);
   }
 };
 
@@ -1175,48 +1260,59 @@ plankTrader = createTradingPost(new THREE.Vector3(COMPOUND_EAST, 0, -6.5), true)
 plankTrader.group.visible = false;
 
 // Tahta Tezgâhı henüz açılmamışken yoldaki boşluğu dolduran geçici çit.
-const plankStallFillerFence = createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -4.9), new THREE.Vector3(COMPOUND_EAST, 0, -8.1));
+// Yön, diğer tüm çit koşularıyla aynı (küçük Z'den büyüğe) olmalı ki panel
+// hizası kaymasın.
+const plankStallFillerFence = createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -8.1), new THREE.Vector3(COMPOUND_EAST, 0, -4.9));
 
-// Her parçanın kendi çiti var; parça açılınca aradaki bölme kaldırılır.
-// Yalnızca yol sınırı çitle ayrılır. Oyuncunun arazisi batı, kuzey ve güneyde
-// açık kalır — kafeste hissettirmemek için kasıtlı; oyuncuyu tutan şey çit
-// değil, arazi sınırı.
-const buildPlotFences = (plot: PlotData, index: number) => {
+// Çit hattı ızgaradan türetilir: açık bir karenin, kilitli (veya ızgara dışı)
+// bir komşuya bakan her kenarına çit çekilir; iki açık kare arasındaki kenar
+// boş bırakılır. Tüm koşular aynı yönde (küçük eksenden büyüğe) çizildiği için
+// paneller kare köşelerinde milimetrik olarak buluşur.
+const COUNTER_GAPS: [number, number][] = [[-8.1, -4.9], [4.9, 8.1]];
+
+// Yol kenarındaki çit, tezgâh ağızlarını açık bırakacak şekilde parçalanır.
+const createEastFenceRun = (minZ: number, maxZ: number) => {
   const runs: THREE.Group[] = [];
-  if (index === 0) {
-    // Doğu hattı: Tezgâh boşlukları hariç milimetrik kesintisiz çit.
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, plot.maxZ), new THREE.Vector3(COMPOUND_EAST, 0, 8.1)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 4.9), new THREE.Vector3(COMPOUND_EAST, 0, -4.9)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -8.1), new THREE.Vector3(COMPOUND_EAST, 0, plot.minZ)));
-  } else if (index === 1) {
-    // Kuzey Genişlemesi (Plot 1): Doğu çiti tam aynı açı ile güneyden kuzeye değil, kuzeyden güneye çizilir.
-    runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(COMPOUND_EAST, 0, -32)));
-    runs.push(createFenceRun(new THREE.Vector3(-32, 0, -32), new THREE.Vector3(-32, 0, -14)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -14), new THREE.Vector3(COMPOUND_EAST, 0, -32)));
-  } else if (index === 2) {
-    // Güney Genişlemesi (Plot 2): Doğu çiti tam aynı açı için (32 -> 14) yönünde çizilir.
-    runs.push(createFenceRun(new THREE.Vector3(-32, 0, 32), new THREE.Vector3(COMPOUND_EAST, 0, 32)));
-    runs.push(createFenceRun(new THREE.Vector3(-32, 0, 14), new THREE.Vector3(-32, 0, 32)));
-    runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, 32), new THREE.Vector3(COMPOUND_EAST, 0, 14)));
-  } else if (index === 3) {
-    // Batı Genişlemesi (Plot 3 - Tezgâhların Tam Karşısı!): Dış sınır çitleri (Batı X = -56, Kuzey & Güney uzantıları)
-    runs.push(createFenceRun(new THREE.Vector3(-56, 0, -32), new THREE.Vector3(-56, 0, 32)));
-    runs.push(createFenceRun(new THREE.Vector3(-56, 0, -32), new THREE.Vector3(-32, 0, -32)));
-    runs.push(createFenceRun(new THREE.Vector3(-56, 0, 32), new THREE.Vector3(-32, 0, 32)));
+  let cursor = minZ;
+  for (const [gapStart, gapEnd] of COUNTER_GAPS) {
+    if (gapEnd <= minZ || gapStart >= maxZ) continue;
+    const start = Math.max(minZ, gapStart);
+    if (start > cursor) runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, cursor), new THREE.Vector3(COMPOUND_EAST, 0, start)));
+    cursor = Math.max(cursor, Math.min(maxZ, gapEnd));
   }
-  plot.fences = runs;
-  for (const run of runs) run.visible = plot.unlocked;
+  if (cursor < maxZ) runs.push(createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, cursor), new THREE.Vector3(COMPOUND_EAST, 0, maxZ)));
+  return runs;
 };
 
-// Kilitli parçaları ayıran ara çitler; parça satın alınınca kaldırılır.
-const dividerFences: THREE.Group[] = [
-  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -14), new THREE.Vector3(COMPOUND_EAST, 0, -14)),
-  createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, 14), new THREE.Vector3(COMPOUND_EAST, 0, 14)),
-  createFenceRun(new THREE.Vector3(-32, 0, -14), new THREE.Vector3(-32, 0, 14)),
-];
+let boundaryFences: THREE.Group[] = [];
 
-plots.forEach(buildPlotFences);
-plots.forEach(populatePlot);
+const rebuildFences = () => {
+  for (const run of boundaryFences) world.remove(run);
+  boundaryFences = [];
+  for (const plot of plots) {
+    if (!plot.unlocked) continue;
+    // Doğu kenarı
+    if (!isCellUnlocked(plot.col + 1, plot.row)) {
+      if (plot.maxX === COMPOUND_EAST) boundaryFences.push(...createEastFenceRun(plot.minZ, plot.maxZ));
+      else boundaryFences.push(createFenceRun(new THREE.Vector3(plot.maxX, 0, plot.minZ), new THREE.Vector3(plot.maxX, 0, plot.maxZ)));
+    }
+    // Batı kenarı
+    if (!isCellUnlocked(plot.col - 1, plot.row)) {
+      boundaryFences.push(createFenceRun(new THREE.Vector3(plot.minX, 0, plot.minZ), new THREE.Vector3(plot.minX, 0, plot.maxZ)));
+    }
+    // Kuzey kenarı (-Z)
+    if (!isCellUnlocked(plot.col, plot.row - 1)) {
+      boundaryFences.push(createFenceRun(new THREE.Vector3(plot.minX, 0, plot.minZ), new THREE.Vector3(plot.maxX, 0, plot.minZ)));
+    }
+    // Güney kenarı (+Z)
+    if (!isCellUnlocked(plot.col, plot.row + 1)) {
+      boundaryFences.push(createFenceRun(new THREE.Vector3(plot.minX, 0, plot.maxZ), new THREE.Vector3(plot.maxX, 0, plot.maxZ)));
+    }
+  }
+};
+
+rebuildFences();
+plots.filter((plot) => plot.unlocked).forEach(populatePlot);
 
 const createRock = (position: THREE.Vector3, scale: number) => {
   const rock = instantiate(seededRandom() > 0.5 ? 'rock-a' : 'rock-b', scale);
@@ -1226,15 +1322,15 @@ const createRock = (position: THREE.Vector3, scale: number) => {
 };
 
 // Yolun doğusu oynanmayan manzara: seyrek ağaç ve kaya ile doldurulur.
-for (let index = 0; index < 26; index += 1) {
-  const position = new THREE.Vector3(6 + seededRandom() * 18, 0, (seededRandom() - 0.5) * 60);
+for (let index = 0; index < 40; index += 1) {
+  const position = new THREE.Vector3(6 + seededRandom() * 18, 0, (seededRandom() - 0.5) * 96);
   const scenery = instantiate(TIER_MODELS[index % 3], 3.4 + seededRandom() * 1.4);
   scenery.position.copy(position);
   scenery.rotation.y = seededRandom() * Math.PI * 2;
   world.add(scenery);
 }
-for (let index = 0; index < 18; index += 1) {
-  const position = new THREE.Vector3(5.5 + seededRandom() * 19, 0, (seededRandom() - 0.5) * 62);
+for (let index = 0; index < 28; index += 1) {
+  const position = new THREE.Vector3(5.5 + seededRandom() * 19, 0, (seededRandom() - 0.5) * 98);
   createRock(position, 0.4 + seededRandom() * 0.5);
 }
 
@@ -1246,48 +1342,39 @@ createBuildZone(
   'Kütük bırakma istasyonu kuruldu!',
 );
 
-// Parça açılınca aradaki bölme çiti kalkar, o parçanın ağaçları görünür olur
-// ve oyuncunun gezebildiği alan genişler.
-const unlockPlot = (index: number) => {
-  const plot = plots[index];
+// Kare satın alınınca: zemini açılır, ağaçları dikilir, çit hattı ızgaraya
+// göre yeniden çizilir (aradaki bölme kalkar, dış sınır uzar) ve yeni komşu
+// karelerin satın alma kareleri belirir.
+const unlockPlot = (plot: PlotData) => {
   plot.unlocked = true;
-  for (const run of plot.fences) run.visible = true;
+  plot.ground.visible = true;
+  populatePlot(plot);
   for (const tree of plot.trees) tree.group.visible = true;
-  for (const tree of trees) {
-    if (tree.plotIndex === index) {
-      tree.group.visible = true;
-    }
-  }
-  const divider = dividerFences[index - 1];
-  if (divider) {
-    world.remove(divider);
-    divider.visible = false;
-  }
-  if (index === 3) {
-    COMPOUND_WEST = -56.0;
-    compoundGround.geometry.dispose();
-    compoundGround.geometry = new THREE.PlaneGeometry(COMPOUND_EAST - COMPOUND_WEST, 68);
-    compoundGround.position.set((COMPOUND_EAST + COMPOUND_WEST) / 2, 0.012, 0);
-  }
-  spawnParticles(new THREE.Vector3(index === 3 ? -35 : -18, 0.8, index === 1 ? -20 : (index === 2 ? 20 : 0)), 0x9fdc61, 22);
+  rebuildFences();
+  refreshPlotZones();
+  spawnParticles(new THREE.Vector3(plot.centerX, 0.8, plot.centerZ), 0x9fdc61, 22);
 };
 
-plots.forEach((plot, index) => {
-  if (index === 0) return;
-  // 3 Yöne Nizami Genişleme Kareleri: Çitin tam ortasında ve oyuncunun iç alanında
-  const targetPos = index === 1
-    ? new THREE.Vector3(-18.5, 0, -12.0)
-    : index === 2
-      ? new THREE.Vector3(-18.5, 0, 12.0)
-      : new THREE.Vector3(-29.5, 0, 0);
-  createBuildZone(
-    targetPos,
-    new THREE.Vector3(),
-    { type: 'money', amount: plot.cost },
-    () => unlockPlot(index),
-    index === 1 ? 'Kuzey ormanı açıldı!' : (index === 2 ? 'Güney ormanı açıldı!' : 'Batı ormanı açıldı!'),
-  );
-});
+// Kilitli bir karenin satın alma karesi, ancak komşularından biri açıldığında
+// belirir; konumu ortak kenarın ortasıdır.
+function refreshPlotZones() {
+  for (const plot of plots) {
+    if (plot.unlocked || plot.zone) continue;
+    const owner = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      .map(([dCol, dRow]) => plotAt(plot.col + dCol, plot.row + dRow))
+      .find((neighbour) => neighbour?.unlocked);
+    if (!owner) continue;
+    plot.zone = createBuildZone(
+      padSpotBetween(plot, owner),
+      new THREE.Vector3(),
+      { type: 'money', amount: plot.cost },
+      () => unlockPlot(plot),
+      `${plotName(plot)} ormanı açıldı!`,
+    );
+  }
+}
+
+refreshPlotZones();
 
 // Bıçkıhane istasyondaki ham kütüğü zamanla tahtaya çevirir. Oyuncunun
 // müdahalesi gerekmez; tek şartı istasyonda kütük olması.
@@ -1516,17 +1603,34 @@ createBuildZone(
   'Kütük bırakma istasyonu kuruldu!',
 );
 
-// Oyuncu araziden hiç çıkamaz; sınır açılmış parçaların birleşimidir.
+// Oyuncu araziden hiç çıkamaz; sınır açık karelerin birleşimidir. Sınırlama
+// bulunulan kareye göre yapılır: komşusu açıksa o yöne bir kare boyu izin
+// verilir, kilitliyse kare kenarında durulur. Kare geçişi bir sonraki karede
+// yeniden hesaplandığı için birleşim alanının tamamı gezilebilir kalır.
+const COMPOUND_MARGIN = 0.7;
 const clampToCompound = (position: THREE.Vector3) => {
-  position.x = THREE.MathUtils.clamp(position.x, COMPOUND_WEST + 0.7, COMPOUND_EAST - 0.8);
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const plot of plots) {
-    if (!plot.unlocked) continue;
-    minZ = Math.min(minZ, plot.minZ);
-    maxZ = Math.max(maxZ, plot.maxZ);
+  let cell = plotContaining(position.x, position.z);
+  if (!cell?.unlocked) {
+    // Sınırın dışına taşılmışsa merkezi en yakın olan açık kareye çekilir.
+    let best: PlotData | undefined;
+    let bestDistance = Infinity;
+    for (const plot of plots) {
+      if (!plot.unlocked) continue;
+      const distance = (plot.centerX - position.x) ** 2 + (plot.centerZ - position.z) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = plot;
+      }
+    }
+    cell = best;
   }
-  position.z = THREE.MathUtils.clamp(position.z, minZ + 0.7, maxZ - 0.7);
+  if (!cell) return;
+  const minX = isCellUnlocked(cell.col - 1, cell.row) ? cell.minX - CELL_SIZE + COMPOUND_MARGIN : cell.minX + COMPOUND_MARGIN;
+  const maxX = isCellUnlocked(cell.col + 1, cell.row) ? cell.maxX + CELL_SIZE - COMPOUND_MARGIN : cell.maxX - 0.8;
+  const minZ = isCellUnlocked(cell.col, cell.row - 1) ? cell.minZ - CELL_SIZE + COMPOUND_MARGIN : cell.minZ + COMPOUND_MARGIN;
+  const maxZ = isCellUnlocked(cell.col, cell.row + 1) ? cell.maxZ + CELL_SIZE - COMPOUND_MARGIN : cell.maxZ - COMPOUND_MARGIN;
+  position.x = THREE.MathUtils.clamp(position.x, minX, maxX);
+  position.z = THREE.MathUtils.clamp(position.z, minZ, maxZ);
 };
 
 const spawnParticles = (position: THREE.Vector3, color: number, count: number) => {
@@ -2951,5 +3055,6 @@ const animate = () => {
 };
 
 animate();
+
 
 
