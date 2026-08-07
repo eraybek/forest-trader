@@ -60,6 +60,8 @@ interface TraderPost {
   // Oyuncunun satışı tetiklemek için üzerinde durduğu alan.
   sellPosition: THREE.Vector3;
   stockPile: THREE.Group;
+  // Tezgâhın diğer yarısında biriken müşteri ödemeleri.
+  cashPile: THREE.Group;
   // Bekleyen alıcıların tezgâh önünde dizildiği sabit noktalar.
   slots: THREE.Vector3[];
   spawnPosition: THREE.Vector3;
@@ -96,8 +98,13 @@ interface CarrierData {
   group: THREE.Group;
   visual: THREE.Group;
   type: 'log' | 'plank';
-  state: 'toSource' | 'toTarget';
+  // 'idle' durumu: taşınacak mal yokken kaynağın çevresinde dolanır.
+  state: 'toSource' | 'toTarget' | 'idle';
   carriedItem: THREE.Object3D | null;
+  // Boştayken gidilen geçici nokta ve o noktada verilen mola.
+  idleTarget: THREE.Vector3 | null;
+  idleWait: number;
+  currentClip: string;
 }
 
 interface TweenData {
@@ -394,6 +401,8 @@ world.add(mainPath);
 const COMPOUND_EAST = -5;
 let COMPOUND_WEST = -32.0;
 const COUNTER_WIDTH = 3.2;
+// Tezgâh tablasının iki yarısının merkezi: mal bir yarıda, para diğer yarıda.
+const COUNTER_HALF_OFFSET = 0.88;
 
 interface PlotData {
   minZ: number;
@@ -483,6 +492,9 @@ const state = {
   carriedPlanks: 0,
   logStallStock: 0,
   plankStallStock: 0,
+  // Tezgâhta biriken ve oyuncu yanına gelince toplanan ödemeler.
+  logStallCash: 0,
+  plankStallCash: 0,
   sawmillBuilt: false,
   clerkHired: false,
   capacity: 5,
@@ -638,8 +650,15 @@ const createCustomerVisual = (variant: number) => {
   return visual;
 };
 
+// Sırt yükü hizası. Karakter grubunun ileri yönü -Z olduğu için yük +Z'de,
+// yani tam sırtta durur. Oyuncu ve taşıyıcı NPC'ler aynı sabitleri kullanır ki
+// yük ikisinde de birebir aynı yerde görünsün.
+const CARRY_BACK_OFFSET_Z = 0.68;
+const CARRY_BASE_Y = 0.34;
+const CARRY_STEP_Y = 0.235;
+
 const stackGroup = new THREE.Group();
-stackGroup.position.set(0, 0, 0.68);
+stackGroup.position.set(0, 0, CARRY_BACK_OFFSET_Z);
 player.add(stackGroup);
 
 const stackMeshes: THREE.Object3D[] = [];
@@ -651,7 +670,7 @@ const rebuildPlayerStack = () => {
   for (let index = 0; index < state.carried; index += 1) {
     const isPlank = index >= carriedLogs;
     const item = isPlank ? instantiate('resource-wood', 0.45) : makeLogMesh(0.78);
-    item.position.set(0, 0.34 + index * 0.235, 0);
+    item.position.set(0, CARRY_BASE_Y + index * CARRY_STEP_Y, 0);
     item.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
     stackGroup.add(item);
     stackMeshes.push(item);
@@ -972,10 +991,15 @@ const createTradingPost = (position: THREE.Vector3, isPlankPost = false): Trader
     addBox(group, new THREE.Vector3(0.22, 1.16, 0.22), new THREE.Vector3(0, 0.58, z), darkTrunkMaterial);
   }
 
-  // Tezgâhta sergilenen satılık mal.
+  // Tezgâh tablası ikiye bölünür: kuzey yarısında (-Z) satılık mal sergilenir,
+  // güney yarısında (+Z) müşterilerin bıraktığı paralar birikir.
   const stockPile = new THREE.Group();
-  stockPile.position.set(0, 0.93, 0);
+  stockPile.position.set(0, 0.93, -COUNTER_HALF_OFFSET);
   group.add(stockPile);
+
+  const cashPile = new THREE.Group();
+  cashPile.position.set(0, 0.93, COUNTER_HALF_OFFSET);
+  group.add(cashPile);
 
   // Oyuncunun satışı tetiklemek için durduğu halka (iç taraf).
   const sellRing = new THREE.Mesh(
@@ -994,6 +1018,7 @@ const createTradingPost = (position: THREE.Vector3, isPlankPost = false): Trader
     position: position.clone(),
     sellPosition: position.clone().add(new THREE.Vector3(-1.5, 0, 0)),
     stockPile,
+    cashPile,
     // Alıcılar tezgâhın önünde doğu yönünde (+X ekseni) tek sıra hâlinde arka arkaya dizilir.
     slots: [0, 1.4, 2.8, 4.2].map((xOffset) => position.clone().add(new THREE.Vector3(1.7 + xOffset, 0, 0))),
     spawnPosition: position.clone().add(new THREE.Vector3(7.5, 0, 0)),
@@ -1012,10 +1037,10 @@ const rebuildTraderStock = () => {
     const shown = Math.min(state.logStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
       const log = makeLogMesh(0.72);
-      const col = index % 3;
-      const row = Math.floor(index / 3);
+      const col = index % 2;
+      const row = Math.floor(index / 2);
       log.rotation.set(0, 0, Math.PI / 2);
-      log.position.set(-0.15, 0.15 + row * 0.24, (col - 1) * 0.68);
+      log.position.set(-0.15, 0.15 + row * 0.24, (col - 0.5) * 0.62);
       logTrader.stockPile.add(log);
     }
   }
@@ -1024,12 +1049,34 @@ const rebuildTraderStock = () => {
     const shown = Math.min(state.plankStallStock, 12);
     for (let index = 0; index < shown; index += 1) {
       const plank = instantiate('resource-wood', 0.45);
-      const col = index % 3;
-      const row = Math.floor(index / 3);
-      plank.position.set(-0.15, 0.12 + row * 0.18, (col - 1) * 0.62);
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      plank.position.set(-0.15, 0.12 + row * 0.18, (col - 0.5) * 0.58);
       plankTrader.stockPile.add(plank);
     }
   }
+};
+
+// Tezgâhın para yarısı: müşterilerin bıraktığı ödemeler oyuncu gelip alana
+// kadar burada deste deste birikir.
+const CASH_PER_NOTE = 12;
+const rebuildTraderCash = () => {
+  const fill = (trader: TraderPost | undefined, cash: number) => {
+    if (!trader) return;
+    trader.cashPile.clear();
+    if (cash <= 0) return;
+    const notes = Math.min(14, Math.max(1, Math.ceil(cash / CASH_PER_NOTE)));
+    for (let index = 0; index < notes; index += 1) {
+      const note = makeBanknoteMesh();
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      note.position.set(-0.06, 0.03 + row * 0.062, (col - 0.5) * 0.36);
+      note.rotation.y = (index % 3 - 1) * 0.09;
+      trader.cashPile.add(note);
+    }
+  };
+  fill(logTrader, state.logStallCash);
+  fill(plankTrader, state.plankStallCash);
 };
 
 const seededRandom = (() => {
@@ -1339,39 +1386,32 @@ const updateSawmill = (delta: number) => {
   }
 };
 
-const spawnLogCarrier = () => {
+const spawnCarrier = (type: 'log' | 'plank') => {
   const group = new THREE.Group();
-  group.position.copy(stationBuildPosition).add(new THREE.Vector3(0, 0, 2.2));
-  const visual = createCustomerVisual(5);
+  const home = type === 'log' ? stationBuildPosition : sawmillBuildPosition;
+  group.position.copy(home).add(new THREE.Vector3(0, 0, 2.2));
+  const visual = createCustomerVisual(type === 'log' ? 5 : 7);
   group.add(visual);
   world.add(group);
-  const mixer = visual.userData.mixer as THREE.AnimationMixer;
-  mixer.clipAction(findClip(visual.userData.modelName, 'walk')).play();
   carriers.push({
     group,
     visual,
-    type: 'log',
+    type,
     state: 'toSource',
     carriedItem: null,
+    idleTarget: null,
+    idleWait: 0,
+    currentClip: '',
   });
+};
+
+const spawnLogCarrier = () => {
+  spawnCarrier('log');
   showToast('Kütük Taşıyıcısı işe alındı!');
 };
 
 const spawnPlankCarrier = () => {
-  const group = new THREE.Group();
-  group.position.copy(sawmillBuildPosition).add(new THREE.Vector3(0, 0, 2.2));
-  const visual = createCustomerVisual(7);
-  group.add(visual);
-  world.add(group);
-  const mixer = visual.userData.mixer as THREE.AnimationMixer;
-  mixer.clipAction(findClip(visual.userData.modelName, 'walk')).play();
-  carriers.push({
-    group,
-    visual,
-    type: 'plank',
-    state: 'toSource',
-    carriedItem: null,
-  });
+  spawnCarrier('plank');
   showToast('Tahta Taşıyıcısı işe alındı!');
 };
 
@@ -1881,23 +1921,51 @@ const sendCustomerAway = (customer: CustomerData) => {
   advanceQueue();
 };
 
-// Ödeme banknotları müşteriden oyuncuya uçar.
-const payoutToPlayer = (from: THREE.Vector3, gold: number) => {
+// Banknot uçuş animasyonu; hedef her karede yeniden hesaplanır ki hareket
+// hâlindeki oyuncuyu da yakalayabilsin.
+const flyBanknotes = (
+  from: THREE.Vector3,
+  gold: number,
+  resolveTarget: () => THREE.Vector3,
+) => {
   const notes = Math.min(5, Math.max(2, Math.round(gold / 9)));
   for (let index = 0; index < notes; index += 1) {
     const note = makeBanknoteMesh();
-    note.position.copy(from).add(new THREE.Vector3(0, 1.15, 0));
+    note.position.copy(from);
     scene.add(note);
     const start = note.position.clone();
     const arc = 0.85 + seededRandom() * 0.7;
     addTween(0.44 + index * 0.06, (progress) => {
       const eased = easeOutCubic(progress);
-      const target = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-      note.position.lerpVectors(start, target, eased);
+      note.position.lerpVectors(start, resolveTarget(), eased);
       note.position.y += Math.sin(progress * Math.PI) * arc;
       note.rotation.y = progress * 6.2;
     }, () => scene.remove(note));
   }
+};
+
+// Alıcı parayı elden oyuncuya değil, tezgâhın para tarafına bırakır.
+const payoutToCounter = (from: THREE.Vector3, trader: TraderPost, gold: number) => {
+  const target = trader.group.position.clone().add(new THREE.Vector3(0, 1.0, COUNTER_HALF_OFFSET));
+  flyBanknotes(from.clone().add(new THREE.Vector3(0, 1.15, 0)), gold, () => target);
+};
+
+// Oyuncu tezgâha uğradığında biriken kasa toplanır.
+const collectStallCash = (trader: TraderPost, isPlankPost: boolean) => {
+  const cash = isPlankPost ? state.plankStallCash : state.logStallCash;
+  if (cash <= 0) return;
+  if (isPlankPost) state.plankStallCash = 0;
+  else state.logStallCash = 0;
+  state.gold += cash;
+  rebuildTraderCash();
+  flyBanknotes(
+    trader.group.position.clone().add(new THREE.Vector3(0, 1.0, COUNTER_HALF_OFFSET)),
+    cash,
+    () => player.position.clone().add(new THREE.Vector3(0, 1.2, 0)),
+  );
+  audio.coin();
+  showToast(`Tezgâh kasası toplandı · +${cash} para`);
+  updateUI();
 };
 
 const availableFor = (customer: CustomerData) =>
@@ -1912,15 +1980,18 @@ const sellToCustomer = (customer: CustomerData) => {
   } else {
     state.logStallStock = Math.max(0, state.logStallStock - customer.wantAmount);
   }
-  state.gold += customer.offerGold;
+  const trader = customer.wantsPlanks ? plankTrader : logTrader;
+  if (customer.wantsPlanks) state.plankStallCash += customer.offerGold;
+  else state.logStallCash += customer.offerGold;
   customer.served = true;
   sendCustomerAway(customer);
   rebuildTraderStock();
-  payoutToPlayer(customer.group.position.clone(), customer.offerGold);
+  payoutToCounter(customer.group.position.clone(), trader, customer.offerGold);
+  rebuildTraderCash();
   audio.coin();
   grantXp(Math.round(customer.wantAmount * (customer.wantsPlanks ? 3 : 1.5)));
   const goods = customer.wantsPlanks ? 'tahta' : 'kütük';
-  showToast(`${customer.wantAmount} ${goods} satıldı · +${customer.offerGold} para`);
+  showToast(`${customer.wantAmount} ${goods} satıldı · tezgâha +${customer.offerGold} para`);
   updateUI();
   return true;
 };
@@ -1978,6 +2049,10 @@ const updateTrader = (delta: number) => {
 
   const nearLog = logTrader.sellPosition.distanceTo(player.position) < 1.6;
   const nearPlank = plankTrader.group.visible && plankTrader.sellPosition.distanceTo(player.position) < 1.6;
+
+  // Tezgâhta biriken ödemeler oyuncu yanına geldiğinde kasadan alınır.
+  if (nearLog) collectStallCash(logTrader, false);
+  if (nearPlank) collectStallCash(plankTrader, true);
 
   // Oyuncunun tezgâha kütük veya tahta teslim etmesi
   if (nearLog && state.carried > state.carriedPlanks) {
@@ -2549,14 +2624,96 @@ const updateClerk = (delta: number) => {
   }
 };
 
+// Taşıyıcılar da iskeletli modeller; yürürken 'walk', boşta beklerken 'idle'
+// klibi sürülür.
+const playCarrierClip = (carrier: CarrierData, clipName: string) => {
+  if (carrier.currentClip === clipName) return;
+  const modelName = carrier.visual.userData.modelName as Parameters<typeof findClip>[0];
+  const mixer = carrier.visual.userData.mixer as THREE.AnimationMixer;
+  const next = mixer.clipAction(findClip(modelName, clipName));
+  const previous = carrier.currentClip
+    ? mixer.clipAction(findClip(modelName, carrier.currentClip))
+    : null;
+  next.reset().setEffectiveWeight(1).fadeIn(0.18).play();
+  previous?.fadeOut(0.18);
+  carrier.currentClip = clipName;
+};
+
+// Yükü sırta, oyuncununkiyle aynı hizaya yerleştirir.
+const attachCarrierLoad = (carrier: CarrierData, item: THREE.Object3D) => {
+  const itemGroup = new THREE.Group();
+  item.position.set(0, CARRY_BASE_Y, 0);
+  itemGroup.position.set(0, 0, CARRY_BACK_OFFSET_Z);
+  itemGroup.add(item);
+  carrier.group.add(itemGroup);
+  carrier.carriedItem = itemGroup;
+};
+
+const carrierHomeFor = (carrier: CarrierData) =>
+  carrier.type === 'log' ? stationBuildPosition : sawmillBuildPosition;
+
+const carrierHasWork = (carrier: CarrierData) =>
+  carrier.type === 'log' ? state.stock > 0 : state.sawmillOutputPlanks > 0;
+
+// Boştaki taşıyıcı, yapının üstünde tepinmek yerine çevresinde bir halka
+// içinde rastgele noktalara yürüyüp aralarda kısa molalar verir.
+const IDLE_RING_MIN = 2.3;
+const IDLE_RING_MAX = 3.6;
+const pickCarrierIdleTarget = (carrier: CarrierData) => {
+  const home = carrierHomeFor(carrier);
+  const offset = carrier.group.position.clone().sub(home);
+  const currentAngle = Math.atan2(offset.z, offset.x);
+  // Yeni nokta hep halkanın üzerinde ve mevcut açıya yakın seçilir; böylece
+  // NPC yapının ortasından geçmek yerine çevresinde dolanır.
+  const turn = (0.35 + seededRandom() * 0.85) * (seededRandom() < 0.5 ? -1 : 1);
+  const angle = currentAngle + turn;
+  const radius = IDLE_RING_MIN + seededRandom() * (IDLE_RING_MAX - IDLE_RING_MIN);
+  const target = home.clone().add(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+  clampToCompound(target);
+  return target;
+};
+
+const moveCarrierTowards = (carrier: CarrierData, target: THREE.Vector3, delta: number, speed: number) => {
+  const direction = target.clone().sub(carrier.group.position);
+  direction.y = 0;
+  const distance = direction.length();
+  if (distance < 0.06) return 0;
+  direction.normalize();
+  carrier.group.position.addScaledVector(direction, Math.min(distance, speed * delta));
+  carrier.group.rotation.y = Math.atan2(-direction.x, -direction.z);
+  return distance;
+};
+
 const updateCarriers = (delta: number) => {
   for (const carrier of carriers) {
     (carrier.visual.userData.mixer as THREE.AnimationMixer).update(delta);
-    const sourcePos = carrier.type === 'log' ? stationBuildPosition : sawmillBuildPosition;
-    const targetTrader = carrier.type === 'log' ? logTrader : plankTrader;
-    const targetPos = targetTrader.sellPosition;
+    const sourcePos = carrierHomeFor(carrier);
 
-    const currentTarget = carrier.state === 'toSource' ? sourcePos : targetPos;
+    if (carrier.state === 'idle') {
+      // İş çıkar çıkmaz gezinme bırakılır.
+      if (carrierHasWork(carrier)) {
+        carrier.state = 'toSource';
+        carrier.idleTarget = null;
+        carrier.idleWait = 0;
+        continue;
+      }
+      if (carrier.idleWait > 0) {
+        carrier.idleWait = Math.max(0, carrier.idleWait - delta);
+        playCarrierClip(carrier, 'idle');
+        continue;
+      }
+      if (!carrier.idleTarget) carrier.idleTarget = pickCarrierIdleTarget(carrier);
+      playCarrierClip(carrier, 'walk');
+      const remaining = moveCarrierTowards(carrier, carrier.idleTarget, delta, 1.35);
+      if (remaining < 0.12) {
+        carrier.idleTarget = null;
+        carrier.idleWait = 0.8 + seededRandom() * 1.8;
+      }
+      continue;
+    }
+
+    const targetTrader = carrier.type === 'log' ? logTrader : plankTrader;
+    const currentTarget = carrier.state === 'toSource' ? sourcePos : targetTrader.sellPosition;
     const direction = currentTarget.clone().sub(carrier.group.position);
     direction.y = 0;
     const distance = direction.length();
@@ -2566,44 +2723,31 @@ const updateCarriers = (delta: number) => {
         if (carrier.type === 'log' && state.stock > 0) {
           state.stock -= 1;
           carrier.state = 'toTarget';
-          if (!carrier.carriedItem) {
-            const itemGroup = new THREE.Group();
-            const log = makeLogMesh(0.75);
-            log.position.set(0, 0.85, -0.42);
-            log.rotation.set(0, 0, Math.PI / 2);
-            itemGroup.add(log);
-            carrier.group.add(itemGroup);
-            carrier.carriedItem = itemGroup;
-          }
-          carrier.carriedItem.visible = true;
+          if (!carrier.carriedItem) attachCarrierLoad(carrier, makeLogMesh(0.75));
+          carrier.carriedItem!.visible = true;
           rebuildStationPiles();
         } else if (carrier.type === 'plank' && state.sawmillOutputPlanks > 0) {
           state.sawmillOutputPlanks -= 1;
           carrier.state = 'toTarget';
-          if (!carrier.carriedItem) {
-            const itemGroup = new THREE.Group();
-            const plank = instantiate('resource-wood', 0.45);
-            plank.position.set(0, 0.85, -0.42);
-            plank.rotation.set(0, 0, Math.PI / 2);
-            itemGroup.add(plank);
-            carrier.group.add(itemGroup);
-            carrier.carriedItem = itemGroup;
-          }
-          carrier.carriedItem.visible = true;
+          if (!carrier.carriedItem) attachCarrierLoad(carrier, instantiate('resource-wood', 0.45));
+          carrier.carriedItem!.visible = true;
           rebuildPlankPile();
+        } else {
+          // Taşınacak bir şey yok: kaynağın üstünde beklemek yerine gezinmeye geçer.
+          carrier.state = 'idle';
+          carrier.idleTarget = null;
+          carrier.idleWait = 0.4 + seededRandom() * 0.9;
         }
       } else {
-        if (carrier.type === 'log') {
-          state.logStallStock += 1;
-          rebuildTraderStock();
-        } else {
-          state.plankStallStock += 1;
-          rebuildTraderStock();
-        }
+        if (carrier.type === 'log') state.logStallStock += 1;
+        else state.plankStallStock += 1;
+        rebuildTraderStock();
         if (carrier.carriedItem) carrier.carriedItem.visible = false;
         carrier.state = 'toSource';
       }
+      playCarrierClip(carrier, carrier.state === 'idle' ? 'idle' : 'walk');
     } else {
+      playCarrierClip(carrier, 'walk');
       direction.normalize();
       carrier.group.position.addScaledVector(direction, delta * 3.2);
       carrier.group.rotation.y = Math.atan2(-direction.x, -direction.z);
@@ -2650,3 +2794,4 @@ const animate = () => {
 };
 
 animate();
+
