@@ -130,20 +130,24 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 .volume-row output { color: #745738; font-size: 12px; font-weight: 900; text-align: right; }
 .volume-row input { width: 100%; accent-color: #57933f; }
 
+/* Kaynaklar dikey bir kule yerine tek satır: dikey telefonda ekranın sol
+   kenarını kaplamıyor, altındaki oyun alanı açık kalıyor. */
 .top-hud {
   position: fixed;
   z-index: 4;
-  top: max(12px, env(safe-area-inset-top));
-  left: 12px;
-  display: grid;
-  gap: 7px;
+  top: max(10px, env(safe-area-inset-top));
+  left: 10px;
+  right: 70px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   pointer-events: none;
 }
 
 .resource-pill {
-  min-width: 92px;
-  height: 39px;
-  padding: 4px 13px 4px 5px;
+  min-width: 0;
+  height: 34px;
+  padding: 3px 11px 3px 4px;
   border: 2px solid rgba(255,255,255,.78);
   border-radius: 15px;
   display: flex;
@@ -153,7 +157,7 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   background: linear-gradient(180deg, rgba(44,55,31,.9), rgba(24,36,20,.88));
   box-shadow: 0 3px 0 rgba(30,31,17,.28), inset 0 1px rgba(255,255,255,.15);
   text-shadow: 0 2px 1px rgba(0,0,0,.35);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .cash-icon {
@@ -201,12 +205,12 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 .log-icon, .big-log { color: #b56b32; text-shadow: 0 2px #72411f; transform: rotate(-8deg); }
 .log-icon { font-size: 22px; }
 
+/* Aksiyon butonu mobilde başparmağın doğal olarak durduğu sağ alt köşede. */
 .side-actions {
   position: fixed;
   z-index: 5;
-  left: 12px;
-  top: 42%;
-  transform: translateY(-50%);
+  right: 12px;
+  bottom: max(16px, calc(env(safe-area-inset-bottom) + 10px));
   display: grid;
   gap: 10px;
 }
@@ -314,14 +318,14 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 .level-bar {
   position: fixed;
   z-index: 5;
-  left: 12px;
-  bottom: max(14px, env(safe-area-inset-bottom));
-  width: min(56vw, 244px);
+  left: 10px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 42px);
+  width: min(52vw, 212px);
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 6px 10px;
-  padding: 8px 12px 9px;
+  gap: 4px 9px;
+  padding: 6px 11px 7px;
   border: 2px solid rgba(255,255,255,.78);
   border-radius: 16px;
   color: #fff;
@@ -414,14 +418,38 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   text-align: center;
   pointer-events: none;
 }
-.action-hint { top: max(70px, calc(env(safe-area-inset-top) + 58px)); }
-.toast { top: 18%; transition: opacity .2s, transform .2s; }
+.action-hint { top: auto; bottom: max(94px, calc(env(safe-area-inset-bottom) + 86px)); }
+.toast { top: calc(max(10px, env(safe-area-inset-top)) + 94px); transition: opacity .2s, transform .2s; }
+
+/* Yüzen joystick keşfedilebilir değil; ilk dokunuşa kadar duran ipucu. */
+.move-hint {
+  position: fixed;
+  z-index: 6;
+  left: 50%;
+  bottom: max(150px, calc(env(safe-area-inset-bottom) + 142px));
+  transform: translateX(-50%);
+  padding: 7px 15px;
+  border: 2px solid rgba(255,255,255,.5);
+  border-radius: 13px;
+  color: #fff;
+  background: rgba(42,52,31,.7);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: move-hint-pulse 1.9s ease-in-out infinite;
+}
+@keyframes move-hint-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
 
 .hidden { display: none !important; }
 
 @media (min-width: 700px) {
-  .side-actions { left: max(18px, calc(50% - 320px)); }
+  .side-actions { right: max(18px, calc(50% - 320px)); }
   .top-hud { left: max(18px, calc(50% - 320px)); }
+  .level-bar { left: max(18px, calc(50% - 320px)); }
 }
 
 @media (max-height: 650px) {

@@ -22,6 +22,10 @@ interface TreeData {
   logs: number;
   logValue: number;
   alive: boolean;
+  // Kesilen ağaç yok olmaz; fidan olarak kalıp bu sayaç dolunca geri büyür.
+  // Böylece oyuncu ormanı tüketip kilitlenemez.
+  regrowTimer: number;
+  regrowDuration: number;
 }
 
 interface GroundLog {
@@ -86,8 +90,6 @@ interface CustomerData {
   wantsPlanks: boolean;
   wantAmount: number;
   offerGold: number;
-  patience: number;
-  maxPatience: number;
   walkClock: number;
   bubble: THREE.Sprite;
   served: boolean;
@@ -146,6 +148,7 @@ const actionHint = getElement<HTMLElement>('action-hint');
 const toast = getElement<HTMLElement>('toast');
 const joystick = getElement<HTMLElement>('joystick');
 const joystickKnob = getElement<HTMLElement>('joystick-knob');
+const moveHint = getElement<HTMLElement>('move-hint');
 const mainMenu = getElement<HTMLElement>('main-menu');
 const playButton = getElement<HTMLButtonElement>('play-button');
 const settingsButton = getElement<HTMLButtonElement>('settings-button');
@@ -328,6 +331,8 @@ const camera = new THREE.OrthographicCamera(-8, 8, 12, -12, 0.1, 100);
 // okunur ve perspektif bozulmadan zeminin iki ekseni de belirgin görünür.
 const cameraOffset = new THREE.Vector3(15, 28, 15);
 const cameraTarget = new THREE.Vector3();
+// Her ekranda yatayda en az bu kadar dünya birimi görünür.
+const MIN_VIEW_WIDTH = 14;
 
 const hemiLight = new THREE.HemisphereLight(0xfff1c6, 0x42612e, 2.2);
 scene.add(hemiLight);
@@ -519,12 +524,16 @@ const plotPadSpots = (plot: PlotData) => {
   return spots;
 };
 
-const stationBuildPosition = new THREE.Vector3(-22, 0, 7.5);
-const sawmillBuildPosition = new THREE.Vector3(-22, 0, -7.5);
-const logClerkBuildPosition = new THREE.Vector3(-9.5, 0, 6.5);
-const plankClerkBuildPosition = new THREE.Vector3(-9.5, 0, -6.5);
-const logCarrierBuildPosition = new THREE.Vector3(-15.5, 0, 7.5);
-const plankCarrierBuildPosition = new THREE.Vector3(-15.5, 0, -7.5);
+// Kompakt avlu: tüm üretim tesisi tezgâhların hemen arkasında, tek bakışta
+// görülebilen küçük bir avluda toplanır. Kütük deposu ve bıçkıhane merkeze
+// alındığı için oyuncunun orman ile satış hattı arasındaki yürüyüşü kısalır;
+// orman avlunun dışındaki halkada kalır.
+const stationBuildPosition = new THREE.Vector3(-12.5, 0, 4.6);
+const sawmillBuildPosition = new THREE.Vector3(-12.5, 0, -4.6);
+const logClerkBuildPosition = new THREE.Vector3(-8.2, 0, 10.2);
+const plankClerkBuildPosition = new THREE.Vector3(-8.2, 0, -10.2);
+const logCarrierBuildPosition = new THREE.Vector3(-17.6, 0, 4.6);
+const plankCarrierBuildPosition = new THREE.Vector3(-17.6, 0, -4.6);
 
 // Alıcıların tezgâha yanaştığı kısa toprak alan; yolun batı kenarına bağlanır.
 const traderPath = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 18), pathMaterial);
@@ -776,6 +785,12 @@ const forestTiers = [
   { hp: 10, logs: 8, value: 90 },
 ];
 
+// Fidanın başlangıç boyu ve kademeye göre büyüme süresi. Uzak ormanın odunu
+// daha değerli olduğu için orada yenilenme de daha yavaştır.
+const REGROW_BASE_SECONDS = 26;
+const REGROW_TIER_SECONDS = 14;
+const SAPLING_SCALE = 0.16;
+
 const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, variant = 0) => {
   const group = new THREE.Group();
   group.position.copy(position);
@@ -820,6 +835,8 @@ const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, vari
     logs: config.logs,
     logValue: config.value,
     alive: true,
+    regrowTimer: 0,
+    regrowDuration: REGROW_BASE_SECONDS + safeTier * REGROW_TIER_SECONDS,
   };
   group.traverse((child) => {
     if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill) return;
@@ -1181,16 +1198,18 @@ const seededRandom = (() => {
 // Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
 const PLAYER_SPAWN = new THREE.Vector3(-8, 0, 0);
 
-const ALL_RESERVED_POSITIONS: THREE.Vector3[] = [
-  PLAYER_SPAWN,
-  stationBuildPosition,
-  sawmillBuildPosition,
-  logClerkBuildPosition,
-  plankClerkBuildPosition,
-  logCarrierBuildPosition,
-  plankCarrierBuildPosition,
-  new THREE.Vector3(COMPOUND_EAST, 0, 6.5),
-  new THREE.Vector3(COMPOUND_EAST, 0, -6.5),
+// Her rezervin kendi yarıçapı var: bina geniş, satın alma karesi dar bir alan
+// tutar. Tek bir büyük yarıçap kullanmak avlunun çevresini gereksiz boşaltıyordu.
+const ALL_RESERVED_POSITIONS: { position: THREE.Vector3; radius: number }[] = [
+  { position: PLAYER_SPAWN, radius: 3.4 },
+  { position: stationBuildPosition, radius: 4.6 },
+  { position: sawmillBuildPosition, radius: 4.2 },
+  { position: logClerkBuildPosition, radius: 2.9 },
+  { position: plankClerkBuildPosition, radius: 2.9 },
+  { position: logCarrierBuildPosition, radius: 2.9 },
+  { position: plankCarrierBuildPosition, radius: 2.9 },
+  { position: new THREE.Vector3(COMPOUND_EAST, 0, 6.5), radius: 4.2 },
+  { position: new THREE.Vector3(COMPOUND_EAST, 0, -6.5), radius: 4.2 },
 ];
 
 const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
@@ -1203,7 +1222,7 @@ const isClearForTree = (position: THREE.Vector3, plot: PlotData, padSpots: THREE
   if (position.z > plot.maxZ - 1.8 || position.z < plot.minZ + 1.8) return false;
   // Yol kenarındaki tezgâh şeridi her zaman boş kalır.
   if (position.x > COMPOUND_EAST - 2.6) return false;
-  if (ALL_RESERVED_POSITIONS.some((pos) => position.distanceTo(pos) < 4.8)) return false;
+  if (ALL_RESERVED_POSITIONS.some((item) => position.distanceTo(item.position) < item.radius)) return false;
   if (padSpots.some((spot) => position.distanceTo(spot) < 3.0)) return false;
   return trees.every((tree) => position.distanceTo(tree.group.position) > 2.8);
 };
@@ -1778,8 +1797,26 @@ const fellTree = (tree: TreeData) => {
     tree.group.rotation.z = -easeInOutCubic(progress) * Math.PI * 0.48;
   }, () => {
     spawnFallenLogs(treePosition, tree.logs, tree.logValue);
-    world.remove(tree.group);
+    // Kütük yerinde bir fidan bırakılır; ağaç silinmez, yeniden büyür.
+    tree.group.rotation.z = 0;
+    tree.group.scale.setScalar(SAPLING_SCALE);
+    tree.regrowTimer = tree.regrowDuration;
   });
+};
+
+const updateTreeRegrowth = (delta: number) => {
+  for (const tree of trees) {
+    if (tree.alive || tree.regrowTimer <= 0) continue;
+    tree.regrowTimer = Math.max(0, tree.regrowTimer - delta);
+    const progress = 1 - tree.regrowTimer / tree.regrowDuration;
+    tree.group.scale.setScalar(SAPLING_SCALE + (1 - SAPLING_SCALE) * easeOutCubic(progress));
+    if (tree.regrowTimer > 0) continue;
+    // Tamamen büyüdü: yeniden kesilebilir.
+    tree.group.scale.setScalar(1);
+    tree.alive = true;
+    tree.hp = tree.maxHp;
+    updateTreeHealthBar(tree);
+  }
 };
 
 let chopClock = 0;
@@ -2019,7 +2056,6 @@ const spawnCustomer = () => {
   world.add(group);
 
   const slot = targetTrader.slots[slotIndex];
-  const maxPatience = 34 + seededRandom() * 12;
   customers.push({
     group,
     visual,
@@ -2029,8 +2065,6 @@ const spawnCustomer = () => {
     wantsPlanks,
     wantAmount,
     offerGold,
-    patience: maxPatience,
-    maxPatience,
     walkClock: 0,
     bubble,
     served: false,
@@ -2126,9 +2160,9 @@ const updateCustomers = (delta: number) => {
     const customer = customers[index];
     (customer.visual.userData.mixer as THREE.AnimationMixer).update(delta);
 
-    // Kafa üstü isteği balonu YALNIZCA en öndeki (slotIndex === 0) müşteri beklerken görünür.
-    const isFrontWaiting = customer.slotIndex === 0 && customer.state === 'waiting' && !customer.served;
-    customer.bubble.visible = isFrontWaiting;
+    // Alıcılar sonsuza kadar bekler; bu yüzden hepsi ne istediğini gösterir ki
+    // oyuncu ormandan bile tezgâhın neye ihtiyacı olduğunu okuyabilsin.
+    customer.bubble.visible = customer.state === 'waiting' && !customer.served;
 
     if (customer.state === 'leaving') {
       playCustomerClip(customer, 'walk');
@@ -2154,12 +2188,8 @@ const updateCustomers = (delta: number) => {
       continue;
     }
 
+    // Alıcı asla pes etmez: sırası gelene kadar tezgâhın önünde bekler.
     playCustomerClip(customer, 'idle');
-    customer.patience -= delta;
-    if (customer.patience <= 0) {
-      sendCustomerAway(customer);
-      showToast('Alıcı bekleyemedi ve gitti');
-    }
   }
 };
 
@@ -2379,6 +2409,8 @@ const updateJoystick = (event: PointerEvent) => {
 
 renderer.domElement.addEventListener('pointerdown', (event) => {
   if (isPanelOpen() || joystickPointer !== null) return;
+  // İlk dokunuşta hareket ipucu görevini tamamlar.
+  moveHint.classList.add('hidden');
   joystickPointer = event.pointerId;
   joystickCenter = new THREE.Vector2(event.clientX, event.clientY);
   joystick.style.left = `${event.clientX}px`;
@@ -2721,7 +2753,11 @@ const updateCamera = (delta: number) => {
 
 const resize = () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const viewHeight = 23;
+  // Ortografik çerçeve yüksekliğe göre sabitlenirse dikey telefonda yalnızca
+  // dar bir şerit görünür ve ekranın büyük kısmı boş kalır. Bunun yerine
+  // görülmesi gereken minimum genişlik hedeflenir; oran daraldıkça çerçeve
+  // uzar, yani telefonda otomatik olarak uzaklaşılır.
+  const viewHeight = THREE.MathUtils.clamp(MIN_VIEW_WIDTH / aspect, 24, 40);
   camera.top = viewHeight / 2;
   camera.bottom = -viewHeight / 2;
   camera.left = -(viewHeight * aspect) / 2;
@@ -3027,6 +3063,7 @@ const animate = () => {
   if (gameStarted && !isPanelOpen()) {
     updatePlayer(delta);
     updateCollection(delta);
+    updateTreeRegrowth(delta);
     updateStations(delta);
     updateBuildZones(delta);
     updateSawmill(delta);
@@ -3055,6 +3092,7 @@ const animate = () => {
 };
 
 animate();
+
 
 
 
