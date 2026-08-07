@@ -38,3 +38,21 @@ etmeniz için hazırlanmıştır.
 - **Adım:** Taşıyıcı boşta gezinirken bir ağaç kesip istasyona kütük bırakın.
 - **Beklenen Sonuç:** Taşıyıcı gezinmeyi anında bırakır, kaynağa yönelir, yükü sırtına alıp
   tezgâha götürür.
+
+### 6. Taşıyıcı Kapasitesi ve Alma Animasyonu Testi
+- **Adım:** İstasyona en az 3 kütük biriktirip taşıyıcıyı izleyin.
+- **Beklenen Sonuç:** Taşıyıcı tek tek değil, **3'er 3'er** taşır (`state.carrierCapacity = 3`).
+  İstasyonda dururken kütükler yığından tek tek havalanıp kavis çizerek sırtına biner —
+  oyuncunun kütük toplama animasyonunun aynısı, `pickup` sesi ve sırt yığını sıçramasıyla
+  birlikte. İstasyon yığını her alışta bir azalır.
+
+### 7. Tezgâha Boşaltma Testi
+- **Adım:** Dolu taşıyıcının tezgâha varışını izleyin.
+- **Beklenen Sonuç:** Sırttaki mal tek tek, kavis çizerek tezgâhın **mal tarafına** iner;
+  her inişte tezgâh stoğu bir artar ve yığın sıçrar. Sırt boşalınca taşıyıcı kaynağa döner.
+
+### 8. Yarım Yük Testi
+- **Adım:** İstasyonda yalnızca 1 kütük varken taşıyıcının gelmesini bekleyin.
+- **Beklenen Sonuç:** Taşıyıcı 3 kütük dolsun diye sonsuza kadar beklemez; ~1.2 saniye
+  bekleyip yeni kütük gelmezse eldeki yükle tezgâha yola çıkar. Beklerken yeni kütük
+  gelirse kapasitesi dolana kadar almaya devam eder.

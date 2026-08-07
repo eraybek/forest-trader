@@ -98,9 +98,18 @@ interface CarrierData {
   group: THREE.Group;
   visual: THREE.Group;
   type: 'log' | 'plank';
-  // 'idle' durumu: taşınacak mal yokken kaynağın çevresinde dolanır.
-  state: 'toSource' | 'toTarget' | 'idle';
-  carriedItem: THREE.Object3D | null;
+  // 'loading'/'unloading': mal tek tek uçarak sırta binerken veya tezgâha
+  // inerken beklenen ara durumlar. 'idle': iş yokken kaynağın çevresinde dolanır.
+  state: 'toSource' | 'loading' | 'toTarget' | 'unloading' | 'idle';
+  // Oyuncununki gibi sırt yığını.
+  stack: THREE.Group;
+  stackMeshes: THREE.Object3D[];
+  carried: number;
+  // Havada olan, henüz sırta konmamış mal sayısı.
+  pending: number;
+  loadClock: number;
+  // Kaynakta mal bitince yola çıkmadan önce beklenen süre.
+  waitClock: number;
   // Boştayken gidilen geçici nokta ve o noktada verilen mola.
   idleTarget: THREE.Vector3 | null;
   idleWait: number;
@@ -498,6 +507,9 @@ const state = {
   sawmillBuilt: false,
   clerkHired: false,
   capacity: 5,
+  // Taşıyıcı NPC'lerin sırt kapasitesi; oyuncununki gibi tek seferde bu kadar
+  // mal taşırlar.
+  carrierCapacity: 3,
   damage: 1,
   speed: 4.8,
   axeInterval: 1,
@@ -1392,13 +1404,22 @@ const spawnCarrier = (type: 'log' | 'plank') => {
   group.position.copy(home).add(new THREE.Vector3(0, 0, 2.2));
   const visual = createCustomerVisual(type === 'log' ? 5 : 7);
   group.add(visual);
+  // Sırt yığını oyuncununkiyle aynı hizada duruyor.
+  const stack = new THREE.Group();
+  stack.position.set(0, 0, CARRY_BACK_OFFSET_Z);
+  group.add(stack);
   world.add(group);
   carriers.push({
     group,
     visual,
     type,
     state: 'toSource',
-    carriedItem: null,
+    stack,
+    stackMeshes: [],
+    carried: 0,
+    pending: 0,
+    loadClock: 0,
+    waitClock: 0,
     idleTarget: null,
     idleWait: 0,
     currentClip: '',
@@ -2639,14 +2660,99 @@ const playCarrierClip = (carrier: CarrierData, clipName: string) => {
   carrier.currentClip = clipName;
 };
 
-// Yükü sırta, oyuncununkiyle aynı hizaya yerleştirir.
-const attachCarrierLoad = (carrier: CarrierData, item: THREE.Object3D) => {
-  const itemGroup = new THREE.Group();
-  item.position.set(0, CARRY_BASE_Y, 0);
-  itemGroup.position.set(0, 0, CARRY_BACK_OFFSET_Z);
-  itemGroup.add(item);
-  carrier.group.add(itemGroup);
-  carrier.carriedItem = itemGroup;
+// Sırt yığını oyuncununkiyle birebir aynı: yatay kütükler/tahtalar kat kat.
+const rebuildCarrierStack = (carrier: CarrierData) => {
+  for (const mesh of carrier.stackMeshes) carrier.stack.remove(mesh);
+  carrier.stackMeshes.length = 0;
+  for (let index = 0; index < carrier.carried; index += 1) {
+    const item = carrier.type === 'plank' ? instantiate('resource-wood', 0.45) : makeLogMesh(0.78);
+    item.position.set(0, CARRY_BASE_Y + index * CARRY_STEP_Y, 0);
+    item.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
+    carrier.stack.add(item);
+    carrier.stackMeshes.push(item);
+  }
+};
+
+const makeCarrierItem = (carrier: CarrierData) =>
+  carrier.type === 'plank' ? instantiate('resource-wood', 0.45) : makeLogMesh(0.78);
+
+// Oyuncunun kütük toplama animasyonunun aynısı: mal yığından havalanıp
+// kavis çizerek NPC'nin sırtındaki sıraya oturur.
+const flyItemToCarrierBack = (carrier: CarrierData, from: THREE.Vector3) => {
+  const stackIndex = carrier.carried + carrier.pending;
+  carrier.pending += 1;
+  const item = makeCarrierItem(carrier);
+  item.position.copy(from);
+  scene.add(item);
+  const start = from.clone();
+  const startScale = item.scale.clone();
+  addTween(0.24, (progress) => {
+    const target = new THREE.Vector3(0, CARRY_BASE_Y + stackIndex * CARRY_STEP_Y, CARRY_BACK_OFFSET_Z);
+    carrier.group.localToWorld(target);
+    const eased = easeOutCubic(progress);
+    item.position.lerpVectors(start, target, eased);
+    item.position.y += Math.sin(progress * Math.PI) * 0.95;
+    item.rotation.y = progress * 0.24;
+    item.scale.copy(startScale).multiplyScalar(1 + Math.sin(progress * Math.PI) * 0.18);
+  }, () => {
+    scene.remove(item);
+    carrier.pending -= 1;
+    carrier.carried += 1;
+    rebuildCarrierStack(carrier);
+    bounceGroup(carrier.stack);
+    audio.pickup();
+  });
+};
+
+// Sırttaki maldan bir tanesini tezgâhın mal tarafına uçurur.
+const flyItemToStall = (carrier: CarrierData, trader: TraderPost) => {
+  const topItem = carrier.stackMeshes[carrier.stackMeshes.length - 1];
+  const start = new THREE.Vector3();
+  if (topItem) topItem.getWorldPosition(start);
+  else carrier.group.getWorldPosition(start);
+  carrier.carried -= 1;
+  rebuildCarrierStack(carrier);
+
+  const shownIndex = Math.min(
+    carrier.type === 'plank' ? state.plankStallStock : state.logStallStock,
+    11,
+  );
+  const column = shownIndex % 2;
+  const row = Math.floor(shownIndex / 2);
+  const target = carrier.type === 'plank'
+    ? trader.stockPile.localToWorld(new THREE.Vector3(-0.15, 0.12 + row * 0.18, (column - 0.5) * 0.58))
+    : trader.stockPile.localToWorld(new THREE.Vector3(-0.15, 0.15 + row * 0.24, (column - 0.5) * 0.62));
+
+  const item = makeCarrierItem(carrier);
+  item.position.copy(start);
+  scene.add(item);
+  addTween(0.2, (progress) => {
+    item.position.lerpVectors(start, target, easeInOutCubic(progress));
+    item.position.y += Math.sin(progress * Math.PI) * 0.9;
+    item.rotation.y += 0.22;
+  }, () => {
+    scene.remove(item);
+    if (carrier.type === 'plank') state.plankStallStock += 1;
+    else state.logStallStock += 1;
+    rebuildTraderStock();
+    bounceGroup(trader.stockPile);
+    audio.unload();
+  });
+};
+
+// Malın havalandığı nokta: istasyondaki kütük yığınının veya bıçkıhane tahta
+// yığınının en üst sırası.
+const carrierPickupOrigin = (carrier: CarrierData) => {
+  if (carrier.type === 'plank') {
+    const index = Math.min(Math.max(state.sawmillOutputPlanks - 1, 0), 9);
+    return plankPile.localToWorld(new THREE.Vector3(0, index * 0.16, (index % 2) * 0.12));
+  }
+  const station = stations[0];
+  const index = Math.max(state.stock - 1, 0);
+  const local = new THREE.Vector3(-1.23 + (index % 4) * 0.82, 0.22 + Math.floor(index / 4) * 0.34, 0);
+  return station
+    ? station.pile.localToWorld(local)
+    : stationBuildPosition.clone().add(new THREE.Vector3(0, 0.9, 0.45));
 };
 
 const carrierHomeFor = (carrier: CarrierData) =>
@@ -2684,10 +2790,16 @@ const moveCarrierTowards = (carrier: CarrierData, target: THREE.Vector3, delta: 
   return distance;
 };
 
+// Bir mal alma/bırakma arası bekleme ve kaynakta mal bitince yola çıkmadan
+// önce verilen tolerans.
+const CARRIER_LOAD_INTERVAL = 0.26;
+const CARRIER_LOAD_GRACE = 1.2;
+
 const updateCarriers = (delta: number) => {
   for (const carrier of carriers) {
     (carrier.visual.userData.mixer as THREE.AnimationMixer).update(delta);
     const sourcePos = carrierHomeFor(carrier);
+    const targetTrader = carrier.type === 'log' ? logTrader : plankTrader;
 
     if (carrier.state === 'idle') {
       // İş çıkar çıkmaz gezinme bırakılır.
@@ -2712,7 +2824,63 @@ const updateCarriers = (delta: number) => {
       continue;
     }
 
-    const targetTrader = carrier.type === 'log' ? logTrader : plankTrader;
+    // Kaynakta yükleme: mallar tek tek, oyuncunun toplama animasyonuyla sırta biner.
+    if (carrier.state === 'loading') {
+      playCarrierClip(carrier, 'idle');
+      const onBoard = carrier.carried + carrier.pending;
+      if (onBoard >= state.carrierCapacity) {
+        if (carrier.pending === 0) {
+          carrier.state = 'toTarget';
+          carrier.waitClock = 0;
+        }
+        continue;
+      }
+      if (carrierHasWork(carrier)) {
+        carrier.waitClock = 0;
+        carrier.loadClock += delta;
+        if (carrier.loadClock >= CARRIER_LOAD_INTERVAL) {
+          carrier.loadClock = 0;
+          const origin = carrierPickupOrigin(carrier);
+          if (carrier.type === 'plank') {
+            state.sawmillOutputPlanks -= 1;
+            rebuildPlankPile();
+          } else {
+            state.stock -= 1;
+            rebuildStationPiles();
+          }
+          flyItemToCarrierBack(carrier, origin);
+        }
+        continue;
+      }
+      // Kaynak boş: kısa bir süre bekler, dolmazsa eldekiyle yola çıkar.
+      carrier.waitClock += delta;
+      if (carrier.pending > 0 || carrier.waitClock < CARRIER_LOAD_GRACE) continue;
+      if (carrier.carried > 0) {
+        carrier.state = 'toTarget';
+      } else {
+        carrier.state = 'idle';
+        carrier.idleTarget = null;
+        carrier.idleWait = 0.4 + seededRandom() * 0.9;
+      }
+      carrier.waitClock = 0;
+      continue;
+    }
+
+    // Tezgâhta boşaltma: mallar tek tek tezgâhın mal tarafına iner.
+    if (carrier.state === 'unloading') {
+      playCarrierClip(carrier, 'idle');
+      if (carrier.carried <= 0) {
+        carrier.state = 'toSource';
+        continue;
+      }
+      carrier.loadClock += delta;
+      if (carrier.loadClock >= CARRIER_LOAD_INTERVAL) {
+        carrier.loadClock = 0;
+        flyItemToStall(carrier, targetTrader);
+      }
+      continue;
+    }
+
     const currentTarget = carrier.state === 'toSource' ? sourcePos : targetTrader.sellPosition;
     const direction = currentTarget.clone().sub(carrier.group.position);
     direction.y = 0;
@@ -2720,18 +2888,10 @@ const updateCarriers = (delta: number) => {
 
     if (distance < 0.5) {
       if (carrier.state === 'toSource') {
-        if (carrier.type === 'log' && state.stock > 0) {
-          state.stock -= 1;
-          carrier.state = 'toTarget';
-          if (!carrier.carriedItem) attachCarrierLoad(carrier, makeLogMesh(0.75));
-          carrier.carriedItem!.visible = true;
-          rebuildStationPiles();
-        } else if (carrier.type === 'plank' && state.sawmillOutputPlanks > 0) {
-          state.sawmillOutputPlanks -= 1;
-          carrier.state = 'toTarget';
-          if (!carrier.carriedItem) attachCarrierLoad(carrier, instantiate('resource-wood', 0.45));
-          carrier.carriedItem!.visible = true;
-          rebuildPlankPile();
+        if (carrierHasWork(carrier)) {
+          carrier.state = 'loading';
+          carrier.loadClock = CARRIER_LOAD_INTERVAL;
+          carrier.waitClock = 0;
         } else {
           // Taşınacak bir şey yok: kaynağın üstünde beklemek yerine gezinmeye geçer.
           carrier.state = 'idle';
@@ -2739,13 +2899,10 @@ const updateCarriers = (delta: number) => {
           carrier.idleWait = 0.4 + seededRandom() * 0.9;
         }
       } else {
-        if (carrier.type === 'log') state.logStallStock += 1;
-        else state.plankStallStock += 1;
-        rebuildTraderStock();
-        if (carrier.carriedItem) carrier.carriedItem.visible = false;
-        carrier.state = 'toSource';
+        carrier.state = 'unloading';
+        carrier.loadClock = CARRIER_LOAD_INTERVAL;
       }
-      playCarrierClip(carrier, carrier.state === 'idle' ? 'idle' : 'walk');
+      playCarrierClip(carrier, 'idle');
     } else {
       playCarrierClip(carrier, 'walk');
       direction.normalize();
@@ -2794,4 +2951,5 @@ const animate = () => {
 };
 
 animate();
+
 
