@@ -394,6 +394,8 @@ world.add(mainPath);
 const COMPOUND_EAST = -5;
 const COMPOUND_WEST = -19.5;
 const COUNTER_WIDTH = 3.2;
+// Alıcılar yolda bu hizaya kadar yürüyüp şeride dönerler.
+const LANE_ENTRY = 1.4;
 
 // Arazi z ekseninde parçalara bölünür; başta yalnızca ilk parça açıktır ve
 // para biriktikçe kuzeye/güneye doğru yeni orman parçaları satın alınır.
@@ -880,8 +882,9 @@ const createBuildZone = (
     new THREE.MeshBasicMaterial({ color: 0x70b84f, transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
   );
   progressFill.rotation.x = -Math.PI / 2;
-  progressFill.position.set(0, 0.045, progressWidth / 2);
-  progressFill.scale.y = 0.001;
+  // Dolum kameraya göre alttan yukarı ilerlesin diye dünya x ekseninde büyür.
+  progressFill.position.set(-progressWidth / 2, 0.045, 0);
+  progressFill.scale.x = 0.001;
   group.add(progressFill);
 
   const borderMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.94 });
@@ -959,11 +962,11 @@ const createTradingPost = (position: THREE.Vector3): TraderPost => {
     position: position.clone(),
     sellPosition: position.clone().add(new THREE.Vector3(-1.5, 0, 0)),
     stockPile,
-    // Alıcılar çitin dışında, tezgâha dik tek sıra hâlinde bekler: en öndeki
-    // tezgâhın hizasında, arkadakiler kuzeye doğru dizilir.
-    slots: [0, 1.5, 3.0].map((z) => position.clone().add(new THREE.Vector3(1.7, 0, z))),
-    spawnPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 14),
-    exitPosition: new THREE.Vector3(COMPOUND_EAST + 1.7, 0, 16),
+    // Tek hizmet noktası olduğu için alıcılar tezgâhtan uzaklaşan yönde arka
+    // arkaya dizilir; yalnızca en öndeki tezgâha temas eder.
+    slots: [1.6, 3.4, 5.2].map((x) => position.clone().add(new THREE.Vector3(x, 0, 0))),
+    spawnPosition: new THREE.Vector3(LANE_ENTRY, 0, 14),
+    exitPosition: new THREE.Vector3(LANE_ENTRY, 0, 16),
     colliders: [
       { center: position.clone(), halfX: 0.45, halfZ: COUNTER_WIDTH / 2 + 0.3 },
     ],
@@ -1086,11 +1089,12 @@ const dividerFences: THREE.Group[] = [
   createFenceRun(new THREE.Vector3(COMPOUND_WEST, 0, -9), new THREE.Vector3(COMPOUND_EAST, 0, -9)),
 ];
 
-// Alıcı şeridi: yol tarafında, çitle çevrili dar bir koridor. Kuzey ucu açık
-// (alıcılar oradan girer), güney ucu ve yol yüzü kapalı.
-const LANE_OUTER = COMPOUND_EAST + 3.2;
-createFenceRun(new THREE.Vector3(LANE_OUTER, 0, 12), new THREE.Vector3(LANE_OUTER, 0, -2.4));
-createFenceRun(new THREE.Vector3(LANE_OUTER, 0, -2.4), new THREE.Vector3(COMPOUND_EAST, 0, -2.4));
+// Alıcı şeridi: tezgâhtan yola uzanan çitli koridor. İki yanı kapalı, yol
+// ucu açık — kuyruk buradan besleniyor.
+const LANE_HALF = 1.5;
+const LANE_END = LANE_ENTRY + 0.6;
+createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, LANE_HALF), new THREE.Vector3(LANE_END, 0, LANE_HALF));
+createFenceRun(new THREE.Vector3(COMPOUND_EAST, 0, -LANE_HALF), new THREE.Vector3(LANE_END, 0, -LANE_HALF));
 
 plots.forEach(buildPlotFences);
 plots.forEach(populatePlot);
@@ -1118,7 +1122,7 @@ for (let index = 0; index < 18; index += 1) {
 createBuildZone(
   stationBuildPosition,
   new THREE.Vector3(),
-  { type: 'wood', amount: 3 },
+  { type: 'money', amount: 5 }, // GECICI TEST: normalde 3 odun
   () => createStation(stationBuildPosition, true),
   'Kütük bırakma istasyonu kuruldu!',
 );
@@ -1138,12 +1142,12 @@ const unlockPlot = (index: number) => {
   spawnParticles(new THREE.Vector3(-12, 0.8, index === 1 ? 9 : -9), 0x9fdc61, 22);
 };
 
-plots.forEach((plot, index) => {
+plots.forEach((_plot, index) => {
   if (index === 0) return;
   createBuildZone(
     new THREE.Vector3(-12, 0, index === 1 ? 9 : -9),
     new THREE.Vector3(),
-    { type: 'money', amount: plot.cost },
+    { type: 'money', amount: 5 }, // GECICI TEST: normalde plot.cost
     () => unlockPlot(index),
     index === 1 ? 'Kuzey ormanı açıldı!' : 'Derin orman açıldı!',
   );
@@ -1235,7 +1239,7 @@ const updateClerk = (delta: number) => {
 createBuildZone(
   sawmillBuildPosition,
   new THREE.Vector3(),
-  { type: 'money', amount: 60 },
+  { type: 'money', amount: 5 }, // GECICI TEST: normalde 60
   createSawmill,
   'Bıçkıhane kuruldu! Kütükler tahtaya dönüşüyor.',
 );
@@ -1243,7 +1247,7 @@ createBuildZone(
 createBuildZone(
   clerkBuildPosition,
   new THREE.Vector3(),
-  { type: 'money', amount: 150 },
+  { type: 'money', amount: 5 }, // GECICI TEST: normalde 150
   hireClerk,
   'Tezgâhtar işe alındı! Satışları o yapacak.',
 );
@@ -1510,7 +1514,7 @@ const unloadOneLog = (station: StationData) => {
 // Alıcının kafasındaki teklif balonu: "N kütük → G para".
 const makeOfferBubble = (amount: number, gold: number, planks: boolean) => {
   const canvas = document.createElement('canvas');
-  canvas.width = 320;
+  canvas.width = 420;
   canvas.height = 128;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas 2D context is unavailable.');
@@ -1518,7 +1522,7 @@ const makeOfferBubble = (amount: number, gold: number, planks: boolean) => {
   context.strokeStyle = '#6c512f';
   context.lineWidth = 8;
   context.beginPath();
-  context.roundRect(8, 8, 304, 102, 34);
+  context.roundRect(8, 8, 404, 102, 34);
   context.fill();
   context.stroke();
 
@@ -1543,16 +1547,23 @@ const makeOfferBubble = (amount: number, gold: number, planks: boolean) => {
 
   // Ok ve ödenecek para.
   context.fillStyle = '#9d7445';
-  context.fillText('→', 178, 58);
+  context.fillText('→', 182, 58);
+  // Fiyat üç haneye çıkabildiği için yazı kalan genişliğe sığacak şekilde ölçeklenir.
   context.fillStyle = '#1f8f45';
-  context.font = '900 48px system-ui';
-  context.fillText(`+${gold}`, 222, 60);
+  const priceText = `+${gold}`;
+  let priceSize = 48;
+  context.font = `900 ${priceSize}px system-ui`;
+  while (context.measureText(priceText).width > 178 && priceSize > 26) {
+    priceSize -= 2;
+    context.font = `900 ${priceSize}px system-ui`;
+  }
+  context.fillText(priceText, 228, 60);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
   bubble.position.set(0, 2.42, 0);
-  bubble.scale.set(2.05, 0.82, 1);
+  bubble.scale.set(2.5, 0.76, 1);
   bubble.renderOrder = 300;
   return bubble;
 };
@@ -1611,6 +1622,8 @@ const marketRate = () => (state.stock > 0 ? state.stockValue / state.stock : 2.4
 const PLANK_MULTIPLIER = 2.5;
 const plankRate = () => (state.planks > 0 ? state.plankValue / state.planks : marketRate() * PLANK_MULTIPLIER);
 const haggleBonus = () => 1 + (state.skills.haggle - 1) * 0.1;
+// GECICI TEST: satislar kolay test icin cok daha fazla kazandiriyor.
+const TEST_PAYOUT_MULTIPLIER = 8;
 
 const removeCustomer = (customer: CustomerData) => {
   world.remove(customer.group);
@@ -1645,7 +1658,9 @@ const spawnCustomer = () => {
   const wantsPlanks = state.sawmillBuilt && seededRandom() < 0.45;
   const wantAmount = wantsPlanks ? 2 + Math.floor(seededRandom() * 5) : 4 + Math.floor(seededRandom() * 7);
   const rate = wantsPlanks ? plankRate() : marketRate();
-  const offerGold = Math.max(5, Math.round(wantAmount * rate * (0.92 + seededRandom() * 0.36) * haggleBonus()));
+  const offerGold = Math.max(5, Math.round(
+    wantAmount * rate * (0.92 + seededRandom() * 0.36) * haggleBonus() * TEST_PAYOUT_MULTIPLIER,
+  ));
   const bubble = makeOfferBubble(wantAmount, offerGold, wantsPlanks);
   bubble.visible = false;
   group.add(visual, bubble);
@@ -1658,8 +1673,8 @@ const spawnCustomer = () => {
     group,
     visual,
     state: 'arriving',
-    // Şerit boyunca doğrudan kendi sırasına yürür.
-    path: [slot.clone()],
+    // Önce yolda şeridin hizasına iner, sonra kuyruktaki yerine yürür.
+    path: [new THREE.Vector3(LANE_ENTRY, 0, 0), slot.clone()],
     slotIndex,
     wantsPlanks,
     wantAmount,
@@ -1676,8 +1691,8 @@ const spawnCustomer = () => {
 const sendCustomerAway = (customer: CustomerData) => {
   customer.bubble.visible = false;
   customer.state = 'leaving';
-  // Şeritten kuzeye doğru çıkar; 'leaving' olduğu için sıra hesabına girmez.
-  customer.path = [trader.exitPosition.clone()];
+  // Şeritten geri çıkıp yoldan uzaklaşır; 'leaving' olduğu için sıraya girmez.
+  customer.path = [new THREE.Vector3(LANE_ENTRY, 0, 0), trader.exitPosition.clone()];
   advanceQueue();
 };
 
@@ -2185,8 +2200,8 @@ const updateBuildZones = (delta: number) => {
         }
         zone.paid += 1;
         const ratio = zone.paid / zone.cost.amount;
-        zone.progressFill.scale.y = Math.max(0.001, ratio);
-        zone.progressFill.position.z = (zone.progressWidth / 2) * (1 - ratio);
+        zone.progressFill.scale.x = Math.max(0.001, ratio);
+        zone.progressFill.position.x = -(zone.progressWidth / 2) * (1 - ratio);
         updatePurchaseLabel(zone.label, zone.paid, zone.cost.amount, zone.cost.type);
         bounceGroup(zone.group);
         updateUI();
