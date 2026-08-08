@@ -43,6 +43,8 @@ interface StationData {
 }
 
 interface BuildZoneData {
+  // Kayıtta bu yapının kurulup kurulmadığını tutan kalıcı kimlik.
+  id: string;
   group: THREE.Group;
   position: THREE.Vector3;
   spawnPosition: THREE.Vector3;
@@ -149,6 +151,11 @@ const toast = getElement<HTMLElement>('toast');
 const joystick = getElement<HTMLElement>('joystick');
 const joystickKnob = getElement<HTMLElement>('joystick-knob');
 const moveHint = getElement<HTMLElement>('move-hint');
+const offlinePanel = getElement<HTMLElement>('offline-panel');
+const offlineAway = getElement<HTMLElement>('offline-away');
+const offlineGold = getElement<HTMLElement>('offline-gold');
+const offlineSold = getElement<HTMLElement>('offline-sold');
+const offlineCollect = getElement<HTMLButtonElement>('offline-collect');
 const mainMenu = getElement<HTMLElement>('main-menu');
 const playButton = getElement<HTMLButtonElement>('play-button');
 const settingsButton = getElement<HTMLButtonElement>('settings-button');
@@ -162,6 +169,7 @@ const sfxVolumeValue = getElement<HTMLOutputElement>('sfx-volume-value');
 
 document.body.classList.add('menu-active');
 let gameStarted = false;
+let saveLoaded = false;
 let settingsOpen = false;
 
 class AudioEngine {
@@ -593,6 +601,7 @@ const state = {
   plankStallCash: 0,
   sawmillBuilt: false,
   clerkHired: false,
+  plankClerkHired: false,
   capacity: 5,
   // Taşıyıcı NPC'lerin sırt kapasitesi; oyuncununki gibi tek seferde bu kadar
   // mal taşırlar.
@@ -1014,6 +1023,7 @@ const rebuildStationPiles = () => {
 };
 
 const createBuildZone = (
+  id: string,
   position: THREE.Vector3,
   spawnOffset: THREE.Vector3,
   cost: ResourceCost,
@@ -1057,6 +1067,7 @@ const createBuildZone = (
   group.add(label);
   world.add(group);
   const zone: BuildZoneData = {
+    id,
     group,
     position: position.clone(),
     spawnPosition: position.clone().add(spawnOffset),
@@ -1186,13 +1197,11 @@ const rebuildTraderCash = () => {
   fill(plankTrader, state.plankStallCash);
 };
 
-const seededRandom = (() => {
-  let seed = 47821;
-  return () => {
-    seed = (seed * 16807) % 2147483647;
-    return (seed - 1) / 2147483646;
-  };
-})();
+let rngSeed = 47821;
+const seededRandom = () => {
+  rngSeed = (rngSeed * 16807) % 2147483647;
+  return (rngSeed - 1) / 2147483646;
+};
 
 // Üs merkezi: ağaç kademeleri bu noktaya olan uzaklığa göre belirlenir.
 // Arazi içindeki yapıların çevresi ağaçsız kalmalı ki yollar tıkanmasın.
@@ -1235,6 +1244,10 @@ const populatePlot = (plot: PlotData) => {
   const plotIndex = plots.indexOf(plot);
   const padSpots = plotPadSpots(plot);
   const target = Math.round((CELL_SIZE * CELL_SIZE) / 7.5);
+  // Kareye özel tohum: hangi sırayla satın alınırsa alınsın orman hep aynı
+  // yerde çıkar, böylece kayıttan dönüşte manzara değişmez.
+  const previousSeed = rngSeed;
+  rngSeed = 100003 + Math.abs(plot.col * 7919 + plot.row * 104729) % 2000000;
   for (let index = 0; index < target; index += 1) {
     const position = new THREE.Vector3();
     let attempts = 0;
@@ -1245,6 +1258,7 @@ const populatePlot = (plot: PlotData) => {
     } while (!isClearForTree(position, plot, padSpots) && attempts < 60);
     if (attempts < 60) makeTree(position, plot.tier, plotIndex);
   }
+  rngSeed = previousSeed;
 };
 
 // Çit: arazi sınırını çizer. Doğu hattında tezgâh için boşluk bırakılır, çünkü
@@ -1353,14 +1367,6 @@ for (let index = 0; index < 28; index += 1) {
   createRock(position, 0.4 + seededRandom() * 0.5);
 }
 
-createBuildZone(
-  stationBuildPosition,
-  new THREE.Vector3(),
-  { type: 'wood', amount: 1 },
-  () => createStation(stationBuildPosition, true),
-  'Kütük bırakma istasyonu kuruldu!',
-);
-
 // Kare satın alınınca: zemini açılır, ağaçları dikilir, çit hattı ızgaraya
 // göre yeniden çizilir (aradaki bölme kalkar, dış sınır uzar) ve yeni komşu
 // karelerin satın alma kareleri belirir.
@@ -1384,6 +1390,7 @@ function refreshPlotZones() {
       .find((neighbour) => neighbour?.unlocked);
     if (!owner) continue;
     plot.zone = createBuildZone(
+      `plot:${plot.col},${plot.row}`,
       padSpotBetween(plot, owner),
       new THREE.Vector3(),
       { type: 'money', amount: plot.cost },
@@ -1564,12 +1571,14 @@ const hirePlankClerk = () => {
   world.add(group);
   const mixer = visual.userData.mixer as THREE.AnimationMixer;
   mixer.clipAction(findClip(visual.userData.modelName, 'idle')).play();
+  state.plankClerkHired = true;
   showToast('Tahta Satıcısı işe alındı!');
 };
 
 const createStationAndUnlockZones = () => {
   createStation(stationBuildPosition, true);
   createBuildZone(
+    'log-clerk',
     logClerkBuildPosition,
     new THREE.Vector3(),
     { type: 'money', amount: 30 },
@@ -1577,6 +1586,7 @@ const createStationAndUnlockZones = () => {
     'Kütük Satıcısı işe alındı!',
   );
   createBuildZone(
+    'log-carrier',
     logCarrierBuildPosition,
     new THREE.Vector3(),
     { type: 'money', amount: 25 },
@@ -1584,6 +1594,7 @@ const createStationAndUnlockZones = () => {
     'Kütük Taşıyıcısı işe alındı!',
   );
   createBuildZone(
+    'sawmill',
     sawmillBuildPosition,
     new THREE.Vector3(),
     { type: 'money', amount: 15 },
@@ -1599,6 +1610,7 @@ const createSawmillAndUnlockZones = () => {
     plankStallFillerFence.visible = false;
   }
   createBuildZone(
+    'plank-clerk',
     plankClerkBuildPosition,
     new THREE.Vector3(),
     { type: 'money', amount: 40 },
@@ -1606,6 +1618,7 @@ const createSawmillAndUnlockZones = () => {
     'Tahta Satıcısı işe alındı!',
   );
   createBuildZone(
+    'plank-carrier',
     plankCarrierBuildPosition,
     new THREE.Vector3(),
     { type: 'money', amount: 35 },
@@ -1615,6 +1628,7 @@ const createSawmillAndUnlockZones = () => {
 };
 
 createBuildZone(
+  'station',
   stationBuildPosition,
   new THREE.Vector3(),
   { type: 'wood', amount: 1 },
@@ -2323,7 +2337,11 @@ const updateUI = () => {
 };
 
 let toastTimer = 0;
+// Kayıttan geri yüklerken yapılar sessizce yeniden kurulur; kurulum
+// fonksiyonlarının kendi bildirimleri de bu bayrakla susturulur.
+let suppressToasts = false;
 const showToast = (message: string) => {
+  if (suppressToasts) return;
   toast.textContent = message;
   toast.classList.remove('hidden');
   toastTimer = 2;
@@ -2345,7 +2363,8 @@ const closePanels = () => {
   backdrop.classList.add('hidden');
 };
 
-const isPanelOpen = () => !backdrop.classList.contains('hidden') || settingsOpen;
+const isPanelOpen = () => !backdrop.classList.contains('hidden') || settingsOpen
+  || !offlinePanel.classList.contains('hidden');
 
 const openSettings = async () => {
   await audio.unlock();
@@ -2386,6 +2405,11 @@ playButton.addEventListener('click', async () => {
   playButton.querySelector('b')!.textContent = 'DEVAM ET';
   mainMenu.classList.add('leaving');
   document.body.classList.remove('menu-active');
+  if (!saveLoaded) {
+    saveLoaded = true;
+    loadGame();
+    if (pendingOfflineGold > 0) offlinePanel.classList.remove('hidden');
+  }
 });
 
 upgradesButton.addEventListener('click', () => openPanel(upgradePanel));
@@ -2589,14 +2613,18 @@ const updateStations = (delta: number) => {
   }
 };
 
-const finishBuildZone = (zone: BuildZoneData) => {
+// silent: kayıttan geri yüklerken yapıları kutlama efekti ve bildirim
+// olmadan yeniden kurmak için kullanılır.
+const finishBuildZone = (zone: BuildZoneData, silent = false) => {
   zone.built = true;
   zone.active = false;
   world.remove(zone.group);
-  spawnParticles(zone.spawnPosition, 0xf2d06b, 16);
+  if (!silent) spawnParticles(zone.spawnPosition, 0xf2d06b, 16);
   zone.onComplete();
+  if (silent) return;
   audio.coin();
   showToast(zone.completeMessage);
+  saveGame();
 };
 
 const updateBuildZones = (delta: number) => {
@@ -3052,6 +3080,221 @@ const updateCarriers = (delta: number) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Kayıt ve çevrimdışı üretim
+// ---------------------------------------------------------------------------
+// İlerleme tarayıcıda saklanır. Kayıt iki parçadan oluşur: sayısal durum ve
+// hangi yapıların kurulduğu. Yapılar kimlikleriyle tutulur; geri yüklerken
+// aynı kurulum fonksiyonları sessizce yeniden çalıştırılır, böylece kurulum
+// mantığı tek yerde kalır.
+const SAVE_KEY = 'forest-trader-save';
+const SAVE_VERSION = 1;
+// Çevrimdışı üretim: en fazla 8 saat birikir ve normal hızın yarısıyla işler.
+const OFFLINE_MAX_SECONDS = 8 * 3600;
+const OFFLINE_RATE = 0.5;
+
+const SAVED_STATE_KEYS = [
+  'gold', 'carried', 'carriedValue', 'carriedPlanks',
+  'stock', 'stockValue', 'sawmillInputLogs', 'sawmillOutputPlanks',
+  'logStallStock', 'plankStallStock', 'logStallCash', 'plankStallCash',
+  'sawmillBuilt', 'clerkHired', 'plankClerkHired',
+  'capacity', 'damage', 'speed', 'axeInterval', 'carrierCapacity',
+  'xp', 'level', 'skillPoints', 'skills',
+] as const;
+
+interface SaveData {
+  v: number;
+  at: number;
+  state: Record<string, unknown>;
+  built: string[];
+  paid: Record<string, number>;
+  player: { x: number; z: number };
+}
+
+function saveGame() {
+  if (!gameStarted) return;
+  const saved: Record<string, unknown> = {};
+  for (const key of SAVED_STATE_KEYS) saved[key] = state[key];
+  const data: SaveData = {
+    v: SAVE_VERSION,
+    at: Date.now(),
+    state: saved,
+    built: buildZones.filter((zone) => zone.built).map((zone) => zone.id),
+    paid: Object.fromEntries(
+      buildZones.filter((zone) => !zone.built && zone.paid > 0).map((zone) => [zone.id, zone.paid]),
+    ),
+    player: { x: player.position.x, z: player.position.z },
+  };
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch {
+    // Depolama dolu veya kapalı: oyun kayıtsız da oynanabilir olmalı.
+  }
+}
+
+const readSave = (): SaveData | null => {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as SaveData;
+    if (data?.v !== SAVE_VERSION) return null;
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+// Çevrimdışı geçen sürede işçilerin ne ürettiğini adım adım hesaplar. Uydurma
+// bir formül yerine oyundaki kuralların sadeleştirilmiş hâli çalıştırılır ki
+// stoklar tutarlı kalsın: bıçkıhane çevirir, taşıyıcılar tezgâhı besler,
+// satıcılar gelen müşterilere satar.
+const OFFLINE_STEP = 5;
+const CARRIER_CYCLE_SECONDS = 6.5;
+const CUSTOMER_INTERVAL = 8.5;
+
+const simulateOffline = (elapsedSeconds: number) => {
+  const effective = Math.min(elapsedSeconds, OFFLINE_MAX_SECONDS) * OFFLINE_RATE;
+  const result = { seconds: Math.min(elapsedSeconds, OFFLINE_MAX_SECONDS), gold: 0, sold: 0 };
+  if (effective < OFFLINE_STEP) return result;
+
+  const logCarriers = carriers.filter((carrier) => carrier.type === 'log').length;
+  const plankCarriers = carriers.filter((carrier) => carrier.type === 'plank').length;
+  const deliveryPerStep = (count: number) =>
+    (count * state.carrierCapacity * OFFLINE_STEP) / CARRIER_CYCLE_SECONDS;
+
+  let customerCredit = 0;
+  for (let elapsed = 0; elapsed < effective; elapsed += OFFLINE_STEP) {
+    // Bıçkıhane: girdi kütüğü tahtaya çevirir.
+    if (state.sawmillBuilt && state.sawmillInputLogs > 0) {
+      const converted = Math.min(state.sawmillInputLogs, OFFLINE_STEP / SAW_INTERVAL);
+      state.sawmillInputLogs -= converted;
+      state.sawmillOutputPlanks += converted;
+    }
+    // Taşıyıcılar: depodan ve bıçkıhaneden tezgâhlara mal taşır.
+    if (logCarriers > 0 && state.stock > 0) {
+      const moved = Math.min(state.stock, deliveryPerStep(logCarriers));
+      state.stock -= moved;
+      state.logStallStock += moved;
+    }
+    if (plankCarriers > 0 && state.sawmillOutputPlanks > 0) {
+      const moved = Math.min(state.sawmillOutputPlanks, deliveryPerStep(plankCarriers));
+      state.sawmillOutputPlanks -= moved;
+      state.plankStallStock += moved;
+    }
+    // Müşteriler: satıcı varsa gelen müşteriye satılır.
+    customerCredit += OFFLINE_STEP / CUSTOMER_INTERVAL;
+    while (customerCredit >= 1) {
+      customerCredit -= 1;
+      const wantsPlanks = state.sawmillBuilt && state.plankClerkHired && seededRandom() < 0.5;
+      if (wantsPlanks) {
+        if (!state.plankClerkHired || state.plankStallStock < 3) continue;
+        state.plankStallStock -= 3;
+        result.gold += Math.round(3 * 60 * haggleBonus());
+        result.sold += 3;
+      } else {
+        if (!state.clerkHired || state.logStallStock < 5) continue;
+        state.logStallStock -= 5;
+        result.gold += Math.round(5 * 25 * haggleBonus());
+        result.sold += 5;
+      }
+    }
+  }
+  state.stock = Math.floor(state.stock);
+  state.sawmillInputLogs = Math.floor(state.sawmillInputLogs);
+  state.sawmillOutputPlanks = Math.floor(state.sawmillOutputPlanks);
+  state.logStallStock = Math.floor(state.logStallStock);
+  state.plankStallStock = Math.floor(state.plankStallStock);
+  return result;
+};
+
+let pendingOfflineGold = 0;
+
+const formatAwayTime = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours} saat ${minutes} dakika`;
+  if (minutes > 0) return `${minutes} dakika`;
+  return 'birkaç saniye';
+};
+
+const loadGame = () => {
+  const data = readSave();
+  if (!data) return;
+
+  for (const key of SAVED_STATE_KEYS) {
+    const value = data.state[key];
+    if (value === undefined) continue;
+    if (key === 'skills') Object.assign(state.skills, value as Record<SkillKind, number>);
+    else (state as unknown as Record<string, unknown>)[key] = value;
+  }
+
+  // Kurulmuş yapılar sessizce yeniden kurulur. Bir yapının kurulması yeni
+  // satın alma kareleri doğurabildiği için liste doyana kadar taranır.
+  const built = new Set(data.built ?? []);
+  suppressToasts = true;
+  for (let pass = 0; pass < 24; pass += 1) {
+    const next = buildZones.find((zone) => !zone.built && built.has(zone.id));
+    if (!next) break;
+    finishBuildZone(next, true);
+  }
+  suppressToasts = false;
+  // Yarım kalan ödemeler korunur.
+  for (const zone of buildZones) {
+    const paid = data.paid?.[zone.id];
+    if (!zone.built && typeof paid === 'number' && paid > 0) {
+      zone.paid = Math.min(paid, zone.cost.amount);
+      const ratio = zone.paid / zone.cost.amount;
+      zone.progressFill.scale.y = Math.max(0.001, ratio);
+      zone.progressFill.position.set((zone.progressWidth / 2) * (1 - ratio), 0.045, 0);
+      updatePurchaseLabel(zone.label, zone.paid, zone.cost.amount, zone.cost.type);
+    }
+  }
+
+  if (data.player) {
+    player.position.set(data.player.x, 0, data.player.z);
+    clampToCompound(player.position);
+    cameraTarget.copy(player.position);
+  }
+  if (state.skills.damage >= 4) setAxeModel(true);
+
+  const away = Math.max(0, (Date.now() - data.at) / 1000);
+  const offline = simulateOffline(away);
+  pendingOfflineGold = offline.gold;
+  if (pendingOfflineGold > 0) {
+    offlineAway.textContent = formatAwayTime(offline.seconds);
+    offlineGold.textContent = `${pendingOfflineGold}`;
+    offlineSold.textContent = `${offline.sold}`;
+  }
+
+  rebuildPlayerStack();
+  rebuildStationPiles();
+  rebuildSawmillInputPile();
+  rebuildPlankPile();
+  rebuildTraderStock();
+  rebuildTraderCash();
+  updateUI();
+};
+
+const collectOfflineEarnings = () => {
+  if (pendingOfflineGold > 0) {
+    state.gold += pendingOfflineGold;
+    pendingOfflineGold = 0;
+    audio.coin();
+    updateUI();
+    saveGame();
+  }
+  offlinePanel.classList.add('hidden');
+};
+
+offlineCollect.addEventListener('click', collectOfflineEarnings);
+
+// Otomatik kayıt: düzenli aralıklarla ve sekme arka plana atıldığında.
+let saveClock = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveGame();
+});
+window.addEventListener('pagehide', saveGame);
+
 const clock = new THREE.Clock();
 let uiClock = 0;
 
@@ -3083,6 +3326,13 @@ const animate = () => {
     uiClock = 0;
     updateUI();
   }
+  if (gameStarted) {
+    saveClock += delta;
+    if (saveClock >= 5) {
+      saveClock = 0;
+      saveGame();
+    }
+  }
   if (toastTimer > 0) {
     toastTimer -= delta;
     if (toastTimer <= 0) toast.classList.add('hidden');
@@ -3092,6 +3342,7 @@ const animate = () => {
 };
 
 animate();
+
 
 
 

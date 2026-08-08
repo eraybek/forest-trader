@@ -460,3 +460,51 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   .menu-tagline { margin: 16px 0 12px; }
   .play-button { height: 56px; }
 }
+
+
+/* Çevrimdışı dönüş ekranı: oyuncu geri geldiğinde yokluğunda ne kazandığını
+   tek bakışta gösterir ve tek dokunuşla toplatır. */
+.offline-panel {
+  position: fixed;
+  z-index: 28;
+  left: 50%;
+  top: 50%;
+  width: min(86vw, 340px);
+  transform: translate(-50%, -50%);
+  padding: 22px 22px 18px;
+  border: 3px solid #f8ecd2;
+  border-radius: 24px;
+  color: #fffbe8;
+  background: linear-gradient(180deg, rgba(66,96,52,.97), rgba(33,60,35,.97));
+  box-shadow: 0 12px 32px rgba(16,32,18,.4);
+  text-align: center;
+  display: grid;
+  gap: 14px;
+}
+.offline-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .18em; color: rgba(255,251,232,.68); }
+.offline-panel h2 { margin: -6px 0 0; font-size: 23px; font-weight: 900; }
+.offline-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.offline-figures > div {
+  padding: 12px 8px;
+  border: 2px solid rgba(255,255,255,.28);
+  border-radius: 16px;
+  background: rgba(19,38,22,.42);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.offline-figures strong { font-size: 26px; font-weight: 900; line-height: 1.1; }
+.offline-figures small { font-size: 11px; font-weight: 700; color: rgba(255,251,232,.7); }
+.offline-collect {
+  height: 52px;
+  border: 3px solid #fff6df;
+  border-radius: 18px;
+  color: #43290d;
+  background: linear-gradient(180deg, #ffd479, #e5a03c);
+  box-shadow: 0 5px 0 #a9691f, 0 9px 16px rgba(35,46,22,.28);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.offline-collect:active { transform: translateY(3px); box-shadow: 0 2px 0 #a9691f; }
