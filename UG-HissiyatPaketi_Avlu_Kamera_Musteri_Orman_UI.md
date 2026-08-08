@@ -34,12 +34,10 @@ toplanır: üs yerleşimi, kamera çerçevesi, müşteri sabrı, orman yenilenme
   yalnızca en öndeki gösteriyordu). Oyuncu ormandan bakınca bile tezgâhın neye ihtiyacı
   olduğunu okuyabilir.
 
-### 5. Orman Yenilenmesi Testi
-- **Adım:** Bir ağacı devirin ve yerini izleyin.
-- **Beklenen Sonuç:** Ağaç sahneden silinmez; devrildikten sonra yerinde bir **fidan** kalır ve
-  zamanla büyüyerek tekrar kesilebilir hâle gelir. Süre kademeye bağlıdır: yakın orman 26 sn,
-  orta 40 sn, derin orman 54 sn. Böylece oyuncu ormanı tüketip kilitlenemez; uzak kareler
-  hâlâ daha değerli çünkü odunları pahalı ve yenilenmeleri yavaş.
+### 5. Orman Yenilenmesi Testi — GEÇERSİZ
+> Bu maddedeki "kesilen ağaç kendiliğinden geri büyür" davranışı kaldırıldı. Anında yenilenme
+> tek kareyi sonsuz kaynağa çevirdiği için arazinin anlamını yok ediyordu. Yerine yuva + tohum +
+> dikim modeli geldi: bkz. `UG-Yuva_Tohum_Dikim.md`.
 
 ### 6. Mobil Arayüz Testi
 - **Adım:** Telefonda dikey oynayın.

@@ -132,16 +132,21 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 
 /* Kaynaklar dikey bir kule yerine tek satır: dikey telefonda ekranın sol
    kenarını kaplamıyor, altındaki oyun alanı açık kalıyor. */
-.top-hud {
+.hud-stack {
   position: fixed;
   z-index: 4;
   top: max(10px, env(safe-area-inset-top));
   left: 10px;
   right: 70px;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  pointer-events: none;
+}
+.top-hud {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  pointer-events: none;
 }
 
 .resource-pill {
@@ -314,12 +319,11 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 .close-panel { width: 36px; height: 36px; border: 0; border-radius: 12px; color: #6c5437; background: #e8c999; font-size: 25px; line-height: 30px; cursor: pointer; }
 
 .stock-icon { color: #d3ab6d; font-size: 19px; text-shadow: 0 2px #6d4a24; }
+.seed-icon { color: #a4d977; font-size: 18px; text-shadow: 0 2px #33581f; }
 
 .level-bar {
-  position: fixed;
   z-index: 5;
-  left: 10px;
-  top: calc(max(10px, env(safe-area-inset-top)) + 42px);
+  position: relative;
   width: min(52vw, 212px);
   display: grid;
   grid-template-columns: auto 1fr;
@@ -419,7 +423,7 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
   pointer-events: none;
 }
 .action-hint { top: auto; bottom: max(94px, calc(env(safe-area-inset-bottom) + 86px)); }
-.toast { top: calc(max(10px, env(safe-area-inset-top)) + 94px); transition: opacity .2s, transform .2s; }
+.toast { top: calc(max(10px, env(safe-area-inset-top)) + 146px); transition: opacity .2s, transform .2s; }
 
 /* Yüzen joystick keşfedilebilir değil; ilk dokunuşa kadar duran ipucu. */
 .move-hint {
@@ -448,8 +452,7 @@ body.menu-active .game-ui { opacity: 0; pointer-events: none; }
 
 @media (min-width: 700px) {
   .side-actions { right: max(18px, calc(50% - 320px)); }
-  .top-hud { left: max(18px, calc(50% - 320px)); }
-  .level-bar { left: max(18px, calc(50% - 320px)); }
+  .hud-stack { left: max(18px, calc(50% - 320px)); }
 }
 
 @media (max-height: 650px) {

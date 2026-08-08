@@ -46,22 +46,25 @@
       </label>
     </section>
 
-    <div class="top-hud game-ui" aria-label="Kaynaklar">
-      <div class="resource-pill"><span class="cash-icon" aria-hidden="true"></span><strong id="gold-count">0</strong></div>
-      <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
-      <div class="resource-pill"><span class="stock-icon">▣</span><strong id="stock-count">0</strong></div>
+    <div class="hud-stack game-ui">
+      <div class="top-hud" aria-label="Kaynaklar">
+        <div class="resource-pill"><span class="cash-icon" aria-hidden="true"></span><strong id="gold-count">0</strong></div>
+        <div class="resource-pill"><span class="log-icon">▰</span><strong id="wood-count">0 / 0</strong></div>
+        <div class="resource-pill"><span class="stock-icon">▣</span><strong id="stock-count">0</strong></div>
+        <div class="resource-pill"><span class="seed-icon">❧</span><strong id="seed-count">0</strong></div>
+      </div>
+
+      <div class="level-bar" aria-label="Seviye ilerlemesi">
+        <span class="level-chip">Sv <strong id="level-value">1</strong></span>
+        <div class="level-track"><div id="level-fill" class="level-fill"></div></div>
+        <small id="level-text">0 / 20 XP</small>
+      </div>
     </div>
 
     <div class="side-actions game-ui">
       <button id="upgrades-button" class="square-button" aria-label="Yetenekler">
         <span>↑</span><small>Yetenek</small><b id="skill-badge" class="badge hidden">1</b>
       </button>
-    </div>
-
-    <div class="level-bar game-ui" aria-label="Seviye ilerlemesi">
-      <span class="level-chip">Sv <strong id="level-value">1</strong></span>
-      <div class="level-track"><div id="level-fill" class="level-fill"></div></div>
-      <small id="level-text">0 / 20 XP</small>
     </div>
 
     <div id="action-hint" class="action-hint game-ui hidden"></div>

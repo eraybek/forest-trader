@@ -10,8 +10,16 @@ interface ResourceCost {
   amount: number;
 }
 
+// Bir ağaç değil, bir ağaç YUVASI. Yuva boş kalabilir, fidan taşıyabilir ya da
+// olgun ağaç taşıyabilir. Kesilen yuva kendiliğinden dolmaz: oyuncu (ileride
+// Ekici NPC) tohum eker. Bir karenin üretim tavanı yuva sayısına bağlıdır.
+type TreeStage = 'empty' | 'growing' | 'mature';
+
 interface TreeData {
   group: THREE.Group;
+  trunk: THREE.Object3D;
+  stump: THREE.Object3D;
+  marker: THREE.Mesh;
   healthBar: THREE.Group;
   rangeIndicator: THREE.Group;
   home: THREE.Vector3;
@@ -21,11 +29,10 @@ interface TreeData {
   plotIndex: number;
   logs: number;
   logValue: number;
-  alive: boolean;
-  // Kesilen ağaç yok olmaz; fidan olarak kalıp bu sayaç dolunca geri büyür.
-  // Böylece oyuncu ormanı tüketip kilitlenemez.
-  regrowTimer: number;
-  regrowDuration: number;
+  stage: TreeStage;
+  // Fidanın olgunlaşmasına kalan süre.
+  growTimer: number;
+  growDuration: number;
 }
 
 interface GroundLog {
@@ -141,6 +148,7 @@ const upgradesButton = getElement<HTMLButtonElement>('upgrades-button');
 const upgradePanel = getElement<HTMLElement>('upgrade-panel');
 const backdrop = getElement<HTMLElement>('panel-backdrop');
 const stockCount = getElement<HTMLElement>('stock-count');
+const seedCount = getElement<HTMLElement>('seed-count');
 const skillBadge = getElement<HTMLElement>('skill-badge');
 const skillPointsNote = getElement<HTMLElement>('skill-points');
 const levelValue = getElement<HTMLElement>('level-value');
@@ -602,6 +610,7 @@ const state = {
   sawmillBuilt: false,
   clerkHired: false,
   plankClerkHired: false,
+  seeds: 0,
   capacity: 5,
   // Taşıyıcı NPC'lerin sırt kapasitesi; oyuncununki gibi tek seferde bu kadar
   // mal taşırlar.
@@ -794,11 +803,23 @@ const forestTiers = [
   { hp: 10, logs: 8, value: 90 },
 ];
 
-// Fidanın başlangıç boyu ve kademeye göre büyüme süresi. Uzak ormanın odunu
-// daha değerli olduğu için orada yenilenme de daha yavaştır.
-const REGROW_BASE_SECONDS = 26;
-const REGROW_TIER_SECONDS = 14;
+// Fidan olgunlaşma süresi kademeye göre uzar: yakın orman hızlı ve ucuz,
+// derin orman yavaş ve pahalı.
+const GROW_SECONDS_BY_TIER = [5, 7, 9];
 const SAPLING_SCALE = 0.16;
+// Boş yuvanın zeminindeki "burada iş var" işareti. Çim de yeşil olduğu için
+// yeşil bir daire okunmuyordu; inşa kareleriyle aynı sıcak sarı kullanılıyor.
+const slotMarkerGeometry = new THREE.CircleGeometry(0.72, 26);
+const slotMarkerRingGeometry = new THREE.RingGeometry(0.72, 0.85, 26);
+const slotMarkerMaterial = new THREE.MeshBasicMaterial({
+  color: 0xf7dc8a,
+  transparent: true,
+  opacity: 0.5,
+  depthWrite: false,
+});
+// Kesilen ağacın yerinde kalan kütük.
+const stumpGeometry = new THREE.CylinderGeometry(0.3, 0.34, 0.36, 9);
+const stumpMaterial = new THREE.MeshStandardMaterial({ color: 0x7d4d26, roughness: 0.95 });
 
 const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, variant = 0) => {
   const group = new THREE.Group();
@@ -820,6 +841,23 @@ const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, vari
   trunk.rotation.y = variant * 1.7;
   group.add(trunk);
 
+  // Yuva boşken görünen kütük ve zemindeki dikim işareti.
+  const stump = new THREE.Mesh(stumpGeometry, stumpMaterial);
+  stump.position.y = 0.18;
+  stump.castShadow = true;
+  stump.visible = false;
+  group.add(stump);
+
+  const marker = new THREE.Mesh(slotMarkerGeometry, slotMarkerMaterial);
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.y = 0.032;
+  marker.visible = false;
+  const markerRing = new THREE.Mesh(slotMarkerRingGeometry, slotMarkerMaterial);
+  markerRing.rotation.x = -Math.PI / 2;
+  markerRing.position.y = 0.001;
+  marker.add(markerRing);
+  group.add(marker);
+
   const healthBar = new THREE.Group();
   healthBar.position.set(0, TIER_HEIGHTS[safeTier] + 0.5, 0);
   healthBar.visible = false;
@@ -834,6 +872,9 @@ const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, vari
   const config = forestTiers[safeTier];
   const tree: TreeData = {
     group,
+    trunk,
+    stump,
+    marker,
     healthBar,
     rangeIndicator,
     home: position.clone(),
@@ -843,12 +884,12 @@ const makeTree = (position: THREE.Vector3, tier: number, plotIndex: number, vari
     plotIndex,
     logs: config.logs,
     logValue: config.value,
-    alive: true,
-    regrowTimer: 0,
-    regrowDuration: REGROW_BASE_SECONDS + safeTier * REGROW_TIER_SECONDS,
+    stage: 'mature',
+    growTimer: 0,
+    growDuration: GROW_SECONDS_BY_TIER[safeTier],
   };
   group.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill) return;
+    if (!(child instanceof THREE.Mesh) || child === barBack || child === barFill || child === marker) return;
     child.userData.tree = tree;
     child.userData.occludable = true;
     // Her ağaca kendi özel materyal kopyası verilir; tek bir ağaç transparan olunca tüm orman etkilenmez.
@@ -1770,7 +1811,7 @@ const updateTreeHealthBar = (tree: TreeData) => {
   fill.scale.x = ratio;
   fill.position.x = -(1.05 * (1 - ratio)) / 2;
   const isUnlocked = plots[tree.plotIndex]?.unlocked ?? false;
-  tree.healthBar.visible = tree.alive && isUnlocked && tree.group.visible && tree.hp < tree.maxHp;
+  tree.healthBar.visible = tree.stage === 'mature' && isUnlocked && tree.group.visible && tree.hp < tree.maxHp;
 };
 
 const spawnFallenLogs = (treePosition: THREE.Vector3, count: number, value: number) => {
@@ -1799,7 +1840,7 @@ const spawnFallenLogs = (treePosition: THREE.Vector3, count: number, value: numb
 };
 
 const fellTree = (tree: TreeData) => {
-  tree.alive = false;
+  tree.stage = 'empty';
   tree.rangeIndicator.visible = false;
   audio.treeFall();
   tree.healthBar.visible = false;
@@ -1811,32 +1852,101 @@ const fellTree = (tree: TreeData) => {
     tree.group.rotation.z = -easeInOutCubic(progress) * Math.PI * 0.48;
   }, () => {
     spawnFallenLogs(treePosition, tree.logs, tree.logValue);
-    // Kütük yerinde bir fidan bırakılır; ağaç silinmez, yeniden büyür.
+    // Yuva boşalır: gövde kaybolur, yerinde kütük ve dikim işareti kalır.
+    // Kendiliğinden dolmaz — birinin tohum ekmesi gerekir.
     tree.group.rotation.z = 0;
-    tree.group.scale.setScalar(SAPLING_SCALE);
-    tree.regrowTimer = tree.regrowDuration;
+    tree.group.scale.setScalar(1);
+    tree.trunk.visible = false;
+    tree.stump.visible = true;
+    tree.marker.visible = true;
+    spawnSeedDrop(treePosition);
   });
 };
 
-const updateTreeRegrowth = (delta: number) => {
+// Devrilen her ağaç bir tohum bırakır: orman döngüsü kendi kendini besler,
+// ayrı bir tohum ekonomisi kurmaya gerek kalmaz.
+const spawnSeedDrop = (position: THREE.Vector3) => {
+  const seed = new THREE.Mesh(
+    new THREE.SphereGeometry(0.13, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0x8c5a2b, roughness: 0.7 }),
+  );
+  seed.castShadow = true;
+  const start = position.clone().add(new THREE.Vector3(0, 1.1, 0));
+  seed.position.copy(start);
+  scene.add(seed);
+  addTween(0.5, (progress) => {
+    const target = player.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+    seed.position.lerpVectors(start, target, easeOutCubic(progress));
+    seed.position.y += Math.sin(progress * Math.PI) * 1.1;
+    seed.rotation.y += 0.3;
+  }, () => {
+    scene.remove(seed);
+    state.seeds += 1;
+    audio.pickup();
+    updateUI();
+  });
+};
+
+// Boş yuvaya tohum eker: gövde fidan boyunda belirir ve büyümeye başlar.
+const plantSeed = (tree: TreeData) => {
+  tree.stage = 'growing';
+  tree.growTimer = tree.growDuration;
+  tree.stump.visible = false;
+  tree.marker.visible = false;
+  tree.trunk.visible = true;
+  tree.trunk.scale.setScalar(SAPLING_SCALE);
+  tree.hp = tree.maxHp;
+  spawnParticles(tree.group.position, 0x9fdc61, 5);
+  audio.unload();
+};
+
+// Rüzgârla tohum: uzun aralıklarla boş bir yuva kendiliğinden filizlenir.
+// Nadir olması kasıtlı — bu bir üretim kaynağı değil, oyuncu tohumsuz ve
+// parasız kalırsa devreye giren emniyet supabı.
+const WIND_SEED_INTERVAL = 55;
+let windSeedClock = WIND_SEED_INTERVAL;
+
+const updateForest = (delta: number) => {
+  // Fidanların büyümesi
   for (const tree of trees) {
-    if (tree.alive || tree.regrowTimer <= 0) continue;
-    tree.regrowTimer = Math.max(0, tree.regrowTimer - delta);
-    const progress = 1 - tree.regrowTimer / tree.regrowDuration;
-    tree.group.scale.setScalar(SAPLING_SCALE + (1 - SAPLING_SCALE) * easeOutCubic(progress));
-    if (tree.regrowTimer > 0) continue;
-    // Tamamen büyüdü: yeniden kesilebilir.
-    tree.group.scale.setScalar(1);
-    tree.alive = true;
+    if (tree.stage !== 'growing') continue;
+    tree.growTimer = Math.max(0, tree.growTimer - delta);
+    const progress = 1 - tree.growTimer / tree.growDuration;
+    tree.trunk.scale.setScalar(SAPLING_SCALE + (1 - SAPLING_SCALE) * easeOutCubic(progress));
+    if (tree.growTimer > 0) continue;
+    tree.trunk.scale.setScalar(1);
+    tree.stage = 'mature';
     tree.hp = tree.maxHp;
     updateTreeHealthBar(tree);
   }
+
+  // Dikim: boş yuvanın üstüne yürümek yeter, tohum varsa kendiliğinden ekilir.
+  if (state.seeds > 0) {
+    for (const tree of trees) {
+      if (tree.stage !== 'empty' || !tree.group.visible) continue;
+      if (tree.group.position.distanceToSquared(player.position) > 1.5 * 1.5) continue;
+      state.seeds -= 1;
+      plantSeed(tree);
+      updateUI();
+      break;
+    }
+  }
+
+  // Boş yuva işareti nefes alır; tek malzeme paylaşıldığı için tek atama yeter.
+  slotMarkerMaterial.opacity = 0.46 + Math.sin(ambientTime * 2.6) * 0.2;
+
+  windSeedClock -= delta;
+  if (windSeedClock > 0) return;
+  windSeedClock = WIND_SEED_INTERVAL;
+  const emptySlots = trees.filter((tree) => tree.stage === 'empty' && tree.group.visible);
+  if (emptySlots.length === 0) return;
+  plantSeed(emptySlots[Math.floor(seededRandom() * emptySlots.length)]);
 };
 
 let chopClock = 0;
 
 const hitTree = (tree: TreeData) => {
-  if (!tree.alive || !tree.group.visible || !plots[tree.plotIndex]?.unlocked) return;
+  if (tree.stage !== 'mature' || !tree.group.visible || !plots[tree.plotIndex]?.unlocked) return;
   audio.chop();
   tree.hp = Math.max(0, tree.hp - state.damage);
   updateTreeHealthBar(tree);
@@ -1845,7 +1955,7 @@ const hitTree = (tree: TreeData) => {
   const startingRotation = tree.group.rotation.z;
   addTween(0.22, (progress) => {
     tree.group.rotation.z = startingRotation + Math.sin(progress * Math.PI) * 0.085;
-  }, () => { if (tree.alive) tree.group.rotation.z = startingRotation; });
+  }, () => { if (tree.stage === 'mature') tree.group.rotation.z = startingRotation; });
   // Her balta darbesi küçük, ağacı devirmek büyük XP verir; derin orman daha çok kazandırır.
   grantXp(1 + tree.tier);
   if (tree.hp <= 0) {
@@ -2312,6 +2422,7 @@ const updateUI = () => {
   goldCount.textContent = `${state.gold}`;
   woodCount.textContent = `${state.carried}/${state.capacity}`;
   stockCount.textContent = `${state.stock}`;
+  seedCount.textContent = `${state.seeds}`;
 
   const needed = xpForLevel(state.level);
   levelValue.textContent = `${state.level}`;
@@ -2482,7 +2593,7 @@ const nearestTreeInRange = () => {
   let result: TreeData | null = null;
   let bestDistance = 2.1;
   for (const tree of trees) {
-    if (!tree.alive) continue;
+    if (tree.stage !== 'mature') continue;
     const distance = player.position.distanceTo(tree.group.position);
     if (distance < bestDistance) {
       bestDistance = distance;
@@ -2494,7 +2605,7 @@ const nearestTreeInRange = () => {
 
 const collidesAt = (position: THREE.Vector3) => {
   for (const tree of trees) {
-    if (tree.alive && position.distanceToSquared(tree.group.position) < 0.68 * 0.68) return true;
+    if (tree.stage === 'mature' && position.distanceToSquared(tree.group.position) < 0.68 * 0.68) return true;
   }
   const playerRadius = 0.36;
   for (const trader of [logTrader, plankTrader]) {
@@ -2726,7 +2837,7 @@ const updateBillboards = () => {
   for (const tree of trees) {
     tree.healthBar.quaternion.copy(camera.quaternion);
     const isUnlocked = plots[tree.plotIndex]?.unlocked ?? false;
-    tree.rangeIndicator.visible = tree.alive && isUnlocked && tree.group.visible && tree.group.position.distanceToSquared(player.position) < 3.6 * 3.6;
+    tree.rangeIndicator.visible = tree.stage === 'mature' && isUnlocked && tree.group.visible && tree.group.position.distanceToSquared(player.position) < 3.6 * 3.6;
   }
 };
 
@@ -2740,11 +2851,11 @@ const updateTreeOcclusion = () => {
   const occludingTrees = new Set<TreeData>();
   for (const hit of occlusionRaycaster.intersectObjects(treeOccluderMeshes, false)) {
     const tree = hit.object.userData.tree as TreeData | undefined;
-    if (tree?.alive) occludingTrees.add(tree);
+    if (tree && tree.stage === 'mature') occludingTrees.add(tree);
   }
 
   for (const tree of trees) {
-    const shouldFade = tree.alive && occludingTrees.has(tree);
+    const shouldFade = tree.stage === 'mature' && occludingTrees.has(tree);
     if (tree.group.userData.faded === shouldFade) continue;
     tree.group.userData.faded = shouldFade;
     tree.group.traverse((child) => {
@@ -3098,7 +3209,7 @@ const SAVED_STATE_KEYS = [
   'stock', 'stockValue', 'sawmillInputLogs', 'sawmillOutputPlanks',
   'logStallStock', 'plankStallStock', 'logStallCash', 'plankStallCash',
   'sawmillBuilt', 'clerkHired', 'plankClerkHired',
-  'capacity', 'damage', 'speed', 'axeInterval', 'carrierCapacity',
+  'seeds', 'capacity', 'damage', 'speed', 'axeInterval', 'carrierCapacity',
   'xp', 'level', 'skillPoints', 'skills',
 ] as const;
 
@@ -3109,6 +3220,8 @@ interface SaveData {
   built: string[];
   paid: Record<string, number>;
   player: { x: number; z: number };
+  // Kare başına yuva durumları: her yuva için tek harf (m/g/e).
+  slots: Record<string, string>;
 }
 
 function saveGame() {
@@ -3124,6 +3237,11 @@ function saveGame() {
       buildZones.filter((zone) => !zone.built && zone.paid > 0).map((zone) => [zone.id, zone.paid]),
     ),
     player: { x: player.position.x, z: player.position.z },
+    slots: Object.fromEntries(
+      plots
+        .filter((plot) => plot.unlocked)
+        .map((plot) => [`${plot.col},${plot.row}`, plot.trees.map((tree) => tree.stage[0]).join('')]),
+    ),
   };
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -3250,6 +3368,30 @@ const loadGame = () => {
     }
   }
 
+  // Yuva durumları: ağaçlar kare tohumundan aynı sırayla üretildiği için
+  // harfler birebir eşleşir.
+  for (const plot of plots) {
+    const encoded = data.slots?.[`${plot.col},${plot.row}`];
+    if (!encoded) continue;
+    plot.trees.forEach((tree, index) => {
+      const letter = encoded[index];
+      if (letter === 'e') {
+        tree.stage = 'empty';
+        tree.trunk.visible = false;
+        tree.stump.visible = true;
+        tree.marker.visible = true;
+      } else if (letter === 'g') {
+        // Yarım kalmış fidan baştan büyümeye başlar; efekt oynatılmaz.
+        tree.stage = 'growing';
+        tree.growTimer = tree.growDuration;
+        tree.stump.visible = false;
+        tree.marker.visible = false;
+        tree.trunk.visible = true;
+        tree.trunk.scale.setScalar(SAPLING_SCALE);
+      }
+    });
+  }
+
   if (data.player) {
     player.position.set(data.player.x, 0, data.player.z);
     clampToCompound(player.position);
@@ -3306,7 +3448,7 @@ const animate = () => {
   if (gameStarted && !isPanelOpen()) {
     updatePlayer(delta);
     updateCollection(delta);
-    updateTreeRegrowth(delta);
+    updateForest(delta);
     updateStations(delta);
     updateBuildZones(delta);
     updateSawmill(delta);
@@ -3342,6 +3484,7 @@ const animate = () => {
 };
 
 animate();
+
 
 
 
