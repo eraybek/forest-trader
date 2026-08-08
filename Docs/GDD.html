@@ -475,55 +475,55 @@
         <ol class="loop">
           <li><b>Kes</b><span>Olgun ağaca yaklaş, balta otomatik sallanır. Ağaç devrilir, kütükler ve bir tohum düşer.</span></li>
           <li><b>Topla</b><span>Yerdeki kütükler sırt yığınına uçar. Kapasite dolunca toplama durur.</span></li>
-          <li><b>Ek</b><span>Boşalan yuvaya tohum bırak. 5 saniye sonra yerinde yeni bir ağaç durur.</span></li>
           <li><b>Bırak</b><span>Kütükleri depoya veya doğrudan tezgâha boşalt. İşlenecekse bıçkıhaneye.</span></li>
           <li><b>Sat</b><span>Tezgâhtaki müşteri malı alır, parayı tezgâhın para tarafına bırakır.</span></li>
           <li><b>Büyüt</b><span>Biriken parayla bina yükselt, NPC tut, gerekiyorsa yeni alan aç.</span></li>
         </ol>
         <p>
-          Bu altı adımın beşi devredilebilir. Devredilen her adım oyuncunun elini bir üst kata
-          çıkarır: önce kesim, sonra dikim, sonra taşıma, en sonunda kasa toplama.
+          Bu beş adımın dördü devredilebilir. Devredilen her adım oyuncunun elini bir üst kata
+          çıkarır: önce kesim, sonra taşıma, sonra satış, en sonunda kasa toplama.
         </p>
       </section>
 
       <section id="orman">
-        <div class="head"><span class="num">03</span><h2>Orman: yuva, tohum, dikim</h2></div>
+        <div class="head"><span class="num">03</span><h2>Orman: yuva ve yenilenme</h2></div>
         <p>
-          Ormanın kalbi <em class="term">ağaç yuvası</em> kavramı. Her karede sabit sayıda yuva vardır;
-          bir yuva ya boştur, ya fidan taşır, ya da olgun bir ağaç. Ağaç kesilince yuva boşalır ve
-          <strong>kendiliğinden dolmaz.</strong>
+          Ormanın kalbi <em class="term">ağaç yuvası</em> kavramı. Her karede sabit sayıda yuva
+          vardır; bir yuva ya fidan taşır ya olgun ağaç ya da kesildikten sonra yeniden
+          filizlenmeyi bekler. Yuva sayısı sabit olduğu için karenin üretim hızı da sabittir.
         </p>
 
-        <h3>Tohum döngüsü</h3>
+        <h3>Yenilenme döngüsü</h3>
         <ul>
-          <li>Devrilen her ağaç kütüklerin yanında <strong>1 tohum</strong> düşürür. Tohum sırt yığınından ayrı, küçük bir sayaçta durur.</li>
-          <li>Oyuncu boş bir yuvaya yaklaşıp tohum bırakır — kısa, tok bir dikim animasyonu.</li>
-          <li>Fidan <strong>5 saniyede</strong> olgun ağaca dönüşür (kademe arttıkça uzar).</li>
-          <li>Boş yuvalar arada <strong>rüzgârla</strong> kendiliğinden filizlenir: nadir, yavaş, tamamen bir emniyet supabı. Oyuncu tohumsuz ve parasız kalırsa oyun yine de akar.</li>
+          <li>Kesilen ağaç yerinde <strong>hiçbir iz bırakmaz</strong> — kütük de kalmaz, işaret de.</li>
+          <li>Yuva görünmez olarak bir süre bekler, sonra karenin <strong>başka bir boş noktasında</strong> fidan olarak filizlenir.</li>
+          <li>Fidan kademeye göre büyür ve olgunlaşınca tekrar kesilebilir.</li>
+          <li>Orman böylece zamanla yer değiştirir; oyuncu hep taze bir ormana bakar, kalıntı tarlasına değil.</li>
         </ul>
         <p>
-          Bu kurgu üç şeyi aynı anda çözer: ağaçlar sihirle geri gelmez, oyuncu asla kilitlenmez, ve
-          ormanın kendisi yönetilmesi gereken bir üretim hattına dönüşür.
+          Erken bir sürümde bu iş manuel dikimle çözülmüştü: oyuncu tohum toplayıp boş yuvalara
+          ekiyordu. Cihazda denenince mekanik hem ormanı kütük ve işaret kalıntısıyla dolduruyor
+          hem de hızlı akan döngüye fazladan bir zihinsel yük bindiriyordu. Kaldırıldı.
         </p>
 
         <div class="table-wrap">
           <table>
             <caption>Ağaç kademeleri</caption>
             <thead>
-              <tr><th>Kademe</th><th>Nerede</th><th class="num">Büyüme</th><th class="num">Kütük</th><th class="num">Kütük değeri</th></tr>
+              <tr><th>Kademe</th><th>Nerede</th><th class="num">Bekleme</th><th class="num">Büyüme</th><th class="num">Kütük</th><th class="num">Kütük değeri</th></tr>
             </thead>
             <tbody>
-              <tr><td><b>Çam</b></td><td>Başlangıç karesi</td><td class="num">5 sn</td><td class="num">5</td><td class="num cash">25</td></tr>
-              <tr><td><b>Kayın</b></td><td>1. halka</td><td class="num">7 sn</td><td class="num">7</td><td class="num cash">45</td></tr>
-              <tr><td><b>Meşe</b></td><td>2–3. halka</td><td class="num">9 sn</td><td class="num">9</td><td class="num cash">80</td></tr>
+              <tr><td><b>Çam</b></td><td>Başlangıç karesi</td><td class="num">8 sn</td><td class="num">5 sn</td><td class="num">5</td><td class="num cash">25</td></tr>
+              <tr><td><b>Kayın</b></td><td>1. halka</td><td class="num">11 sn</td><td class="num">7 sn</td><td class="num">7</td><td class="num cash">45</td></tr>
+              <tr><td><b>Meşe</b></td><td>2–3. halka</td><td class="num">14 sn</td><td class="num">9 sn</td><td class="num">9</td><td class="num cash">80</td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          Bir karenin sürdürülebilir üretimi basit bir orandır: <strong>yuva sayısı ÷ büyüme süresi</strong>.
-          Başlangıç karesi 36 yuva ve 5 saniyelik büyümeyle teorik olarak saniyede 7 ağaç besleyebilir —
-          yani darboğaz uzun süre orman değil, <strong>oyuncunun ve işçilerin elleri</strong> olur. Genişleme
-          baskısı ancak işçi ordusu bu tavana dayandığında başlar.
+          Bir karenin sürdürülebilir üretimi basit bir orandır: <strong>yuva sayısı ÷ döngü süresi</strong>.
+          Başlangıç karesi 28 yuva ve 13 saniyelik döngüyle saniyede iki ağaca yakın besleyebilir —
+          yani darboğaz uzun süre orman değil, <strong>oyuncunun ve işçilerin elleri</strong> olur.
+          Genişleme baskısı ancak işçi ordusu bu tavana dayandığında başlar.
         </p>
       </section>
 
@@ -570,9 +570,9 @@
             <tbody>
               <tr><td><b>Tezgâh Taşıyıcısı</b></td><td>Depo → tezgâh, 3'er 3'er</td><td>Tezgâhı besleme</td><td><span class="tag now">Var</span></td></tr>
               <tr><td><b>Satıcı</b></td><td>Tezgâhtaki müşteriye satar</td><td>Tezgâhta beklemek</td><td><span class="tag now">Var</span></td></tr>
-              <tr><td><b>Ekici</b></td><td>Boş yuvalara tohum diker</td><td>Dikim</td><td><span class="tag next">Sırada</span></td></tr>
-              <tr><td><b>Oduncu</b></td><td>Olgun ağaçları keser</td><td>Balta</td><td><span class="tag next">Sırada</span></td></tr>
-              <tr><td><b>Toplayıcı</b></td><td>Yerdeki kütüğü depoya taşır</td><td>Toplama ve taşıma</td><td><span class="tag next">Sırada</span></td></tr>
+              <tr><td><b>Ormancı</b></td><td>Fidanları sular, büyümeyi hızlandırır</td><td>—</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Oduncu</b></td><td>Olgun ağaçları keser</td><td>Balta</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Toplayıcı</b></td><td>Yerdeki kütüğü depoya taşır</td><td>Toplama ve taşıma</td><td><span class="tag now">Var</span></td></tr>
               <tr><td><b>Kasadar</b></td><td>Tezgâh kasasını toplar</td><td>Para toplama</td><td><span class="tag later">Sonra</span></td></tr>
             </tbody>
           </table>
@@ -723,7 +723,7 @@
             </thead>
             <tbody>
               <tr><td class="num">1</td><td><b>Kayıt + çevrimdışı kazanç</b></td><td>Kalıcılık olmadan seviyeli bina ve uzun vadeli büyüme anlamsız.</td></tr>
-              <tr><td class="num">2</td><td><b>Yuva + tohum + dikim sistemi</b></td><td>Anında yenilenmeyi kaldırır, arazinin anlamını kurar.</td></tr>
+              <tr><td class="num">2</td><td><b>Yuva + yeniden filizlenme sistemi</b></td><td>Anında yenilenmeyi kaldırır, arazinin anlamını kurar.</td></tr>
               <tr><td class="num">3</td><td><b>Ekici, Oduncu, Toplayıcı NPC</b></td><td>Otomasyon merdiveninin gövdesi; idle hissi buradan gelir.</td></tr>
               <tr><td class="num">4</td><td><b>Bina seviyeleri + İşçi Evi</b></td><td>Paranın uzun vadeli harcama yeri; büyüme buradan okunur.</td></tr>
               <tr><td class="num">5</td><td><b>Harita ve İşçiler ekranı</b></td><td>Sistem büyüdükçe durumu görmek zorunlu hâle gelir.</td></tr>
@@ -743,8 +743,8 @@
         <div class="head"><span class="num">12</span><h2>Açık kararlar</h2></div>
         <p>Bu dört başlık netleşmeden 2. ve 3. maddeler yazılmamalı.</p>
         <ul class="open">
-          <li><b>Tohum nereden gelir?</b><span>Öneri: her devrilen ağaç 1 tohum düşürür — döngü kendi kendini besler, ayrı bir ekonomi gerekmez. Alternatifleri: parayla satın alma veya sınırsız tohum.</span></li>
-          <li><b>Dikim nasıl tetiklenir?</b><span>Öneri: boş yuvaya yaklaşınca otomatik — Forest Hustle'ın "yürü ve olsun" hissi. Alternatifi: butonla bilinçli dikim.</span></li>
+          <li><b>İşçi başına üretim dengesi</b><span>Oduncu ile Toplayıcı arasındaki hız farkı yere kütük yığıyordu; Toplayıcı hızlandırılıp Oduncu yavaşlatılarak dengelendi. Her yeni işçi tipinde bu oran yeniden ölçülmeli.</span></li>
+          <li><b>Yuva yer değiştirme sıkışması</b><span>Orman kapasitesindeyken yeniden filizlenen ağaç yeni bir boş nokta bulamayıp eski yerinde çıkıyor. Şimdilik kabul edilebilir; yuva sayısı artarsa yeniden bakılmalı.</span></li>
           <li><b>Harita ne kadar ileri gitsin?</b><span>Öneri: yalnızca durum gösteren, dokununca kamerayı taşıyan basit bir üstten görünüm. Alternatifi: haritadan doğrudan yönetim.</span></li>
           <li><b>Çevrimdışı kazanç oranı</b><span>Öneri: en fazla 8 saat, normal hızın %50'si. Cömert olursa aktif oynamanın anlamı azalır, cimri olursa geri dönme sebebi kalmaz.</span></li>
         </ul>
