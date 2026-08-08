@@ -1,0 +1,761 @@
+<title>Forest Trader — Oyun Tasarım Dokümanı</title>
+<style>
+  :root {
+    --ground: #EEF1E9;
+    --paper: #F8FAF4;
+    --sunk: #E3E8DA;
+    --ink: #171E15;
+    --ink-soft: #46523F;
+    --ink-faint: #77836F;
+    --rule: #CBD3C0;
+    --rule-strong: #A9B49C;
+    --timber: #A85F1C;
+    --timber-soft: #F0E1CD;
+    --cash: #1E8F45;
+    --cash-soft: #DCEEDF;
+    --shade: rgba(23, 30, 21, .07);
+    --display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --data: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #111509;
+      --paper: #191F13;
+      --sunk: #212818;
+      --ink: #EDF1E5;
+      --ink-soft: #B4BFA8;
+      --ink-faint: #7E8A74;
+      --rule: #313A28;
+      --rule-strong: #46523A;
+      --timber: #DE9A4A;
+      --timber-soft: #33260F;
+      --cash: #56C97C;
+      --cash-soft: #12301C;
+      --shade: rgba(0, 0, 0, .32);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #111509;
+    --paper: #191F13;
+    --sunk: #212818;
+    --ink: #EDF1E5;
+    --ink-soft: #B4BFA8;
+    --ink-faint: #7E8A74;
+    --rule: #313A28;
+    --rule-strong: #46523A;
+    --timber: #DE9A4A;
+    --timber-soft: #33260F;
+    --cash: #56C97C;
+    --cash-soft: #12301C;
+    --shade: rgba(0, 0, 0, .32);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 22px 96px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  /* ---------- Başlık ---------- */
+  .masthead {
+    padding: 56px 0 30px;
+    border-bottom: 3px solid var(--ink);
+    display: grid;
+    gap: 20px;
+  }
+  .mark { display: flex; align-items: center; gap: 14px; }
+  .mark svg { display: block; flex: none; }
+  .mark span {
+    font-family: var(--data);
+    font-size: 11px;
+    letter-spacing: .19em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: clamp(38px, 8vw, 76px);
+    font-weight: 800;
+    letter-spacing: -.035em;
+    line-height: .94;
+    text-wrap: balance;
+  }
+  .masthead h1 em {
+    font-style: normal;
+    color: var(--timber);
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 62ch;
+    font-size: clamp(17px, 2.4vw, 21px);
+    color: var(--ink-soft);
+  }
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    padding-top: 6px;
+    font-family: var(--data);
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .meta-strip b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Gövde düzeni ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0 60px;
+    align-items: start;
+  }
+  @media (min-width: 940px) {
+    .layout { grid-template-columns: 214px minmax(0, 1fr); }
+    .toc { position: sticky; top: 28px; }
+  }
+
+  .toc {
+    padding: 30px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  @media (min-width: 940px) { .toc { border-bottom: 0; } }
+  .toc p {
+    margin: 0 0 12px;
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: .17em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; counter-reset: toc; }
+  .toc a {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 6px;
+    padding: 3px 0;
+    color: var(--ink-soft);
+    font-family: var(--display);
+    font-size: 13.5px;
+    line-height: 1.35;
+    text-decoration: none;
+    border-radius: 3px;
+  }
+  .toc a::before {
+    counter-increment: toc;
+    content: counter(toc, decimal-leading-zero);
+    font-family: var(--data);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    padding-top: 2px;
+  }
+  .toc a:hover { color: var(--timber); }
+  .toc a:focus-visible { outline: 2px solid var(--timber); outline-offset: 2px; }
+
+  .content { padding-top: 30px; min-width: 0; }
+
+  section { padding: 20px 0 40px; scroll-margin-top: 22px; }
+  section + section { border-top: 1px solid var(--rule); }
+
+  .head { display: grid; gap: 4px; margin-bottom: 20px; }
+  .head .num {
+    font-family: var(--data);
+    font-size: 11px;
+    letter-spacing: .16em;
+    color: var(--timber);
+  }
+  h2 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: clamp(23px, 3.4vw, 31px);
+    font-weight: 750;
+    letter-spacing: -.02em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+  h3 {
+    margin: 30px 0 8px;
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -.005em;
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  ul, ol.plain { margin: 0 0 16px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 6px; }
+  strong { font-weight: 700; }
+  em.term { font-style: normal; color: var(--timber); font-weight: 700; }
+
+  /* ---------- Öne çıkan ilke ---------- */
+  .axiom {
+    margin: 22px 0 26px;
+    padding: 20px 24px;
+    background: var(--paper);
+    border-left: 4px solid var(--timber);
+    border-radius: 0 6px 6px 0;
+    box-shadow: 0 1px 2px var(--shade);
+  }
+  .axiom p { margin: 0; font-size: 18.5px; line-height: 1.5; }
+  .axiom p + p { margin-top: 10px; font-size: 16px; color: var(--ink-soft); }
+
+  /* ---------- Döngü şeridi ---------- */
+  .loop {
+    display: grid;
+    gap: 10px;
+    margin: 4px 0 26px;
+    padding: 0;
+    list-style: none;
+    counter-reset: loop;
+  }
+  @media (min-width: 620px) { .loop { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1100px) { .loop { grid-template-columns: repeat(3, 1fr); } }
+  .loop li {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    display: grid;
+    gap: 3px;
+  }
+  .loop li::before {
+    counter-increment: loop;
+    content: "0" counter(loop);
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    color: var(--timber);
+  }
+  .loop b { font-family: var(--display); font-size: 15px; font-weight: 700; }
+  .loop span { font-size: 14.5px; color: var(--ink-soft); line-height: 1.45; }
+
+  /* ---------- Tablolar ---------- */
+  .table-wrap {
+    margin: 6px 0 24px;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--paper);
+  }
+  table { width: 100%; border-collapse: collapse; font-family: var(--display); font-size: 14.5px; }
+  caption {
+    caption-side: top;
+    padding: 12px 16px 0;
+    text-align: left;
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  th, td { padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num, th.num { font-family: var(--data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.cash { color: var(--cash); font-weight: 600; }
+  td b { font-weight: 700; }
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-family: var(--data);
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .tag.now { background: var(--cash-soft); color: var(--cash); }
+  .tag.next { background: var(--timber-soft); color: var(--timber); }
+  .tag.later { background: var(--sunk); color: var(--ink-faint); }
+
+  /* ---------- Sayı vurguları ---------- */
+  .figures {
+    display: grid;
+    gap: 1px;
+    margin: 4px 0 26px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  @media (min-width: 560px) { .figures { grid-template-columns: repeat(3, 1fr); } }
+  .figures div { background: var(--paper); padding: 16px 18px; display: grid; gap: 2px; }
+  .figures dt { font-family: var(--data); font-size: 10.5px; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); }
+  .figures dd {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 27px;
+    font-weight: 750;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .figures dd small { font-size: 14px; font-weight: 600; color: var(--ink-soft); letter-spacing: 0; }
+
+  /* ---------- Zaman çizelgesi ---------- */
+  .beats { margin: 4px 0 24px; padding: 0; list-style: none; display: grid; gap: 0; }
+  .beats li {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .beats li:last-child { border-bottom: 0; }
+  .beats time {
+    font-family: var(--data);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--timber);
+    padding-top: 2px;
+  }
+  .beats b { font-family: var(--display); font-size: 15px; font-weight: 700; display: block; }
+  .beats span { font-size: 15px; color: var(--ink-soft); }
+
+  /* ---------- Karar kutusu ---------- */
+  .open {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+  }
+  .open li {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--sunk);
+    border-radius: 6px;
+    display: grid;
+    gap: 3px;
+  }
+  .open b { font-family: var(--display); font-size: 15px; font-weight: 700; }
+  .open span { font-size: 14.5px; color: var(--ink-soft); }
+
+  footer {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 26px 22px 60px;
+    border-top: 3px solid var(--ink);
+    font-family: var(--data);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="sheet">
+  <header class="masthead">
+    <div class="mark">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="17" cy="17" r="15.4" opacity=".28"/>
+          <circle cx="17" cy="17" r="11.2" opacity=".45"/>
+          <circle cx="17" cy="17" r="7" opacity=".68"/>
+          <circle cx="17" cy="17" r="2.9"/>
+        </g>
+      </svg>
+      <span>Moonborne Games · Tasarım Dokümanı v1</span>
+    </div>
+    <h1>Forest Trader<br><em>oyun tasarım dokümanı</em></h1>
+    <p class="standfirst">
+      Bir ağaç kesersin, sırtında taşırsın, satarsın. Sonra o işi yapacak birini tutarsın.
+      Casual idle bir kereste işletmesi: hızlı döngü, tatminkâr animasyon, büyüyen bir iş.
+    </p>
+    <div class="meta-strip">
+      <span>Tür: <b>Casual Idle / Tycoon</b></span>
+      <span>Platform: <b>Mobil web, dikey</b></span>
+      <span>Referans: <b>Forest Hustle · Whiteout Survival</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="İçindekiler">
+      <p>İçindekiler</p>
+      <ol>
+        <li><a href="#pusula">Tasarım pusulası</a></li>
+        <li><a href="#dongu">Çekirdek döngü</a></li>
+        <li><a href="#orman">Orman: yuva, tohum, dikim</a></li>
+        <li><a href="#ekonomi">Değer zinciri</a></li>
+        <li><a href="#otomasyon">Otomasyon merdiveni</a></li>
+        <li><a href="#binalar">Binalar ve seviyeler</a></li>
+        <li><a href="#arazi">Arazi ve genişleme</a></li>
+        <li><a href="#tempo">İlk on dakika</a></li>
+        <li><a href="#arayuz">Arayüz</a></li>
+        <li><a href="#kayit">Kayıt ve çevrimdışı</a></li>
+        <li><a href="#yolharitasi">Yol haritası</a></li>
+        <li><a href="#acik">Açık kararlar</a></li>
+      </ol>
+    </nav>
+
+    <main class="content">
+
+      <section id="pusula">
+        <div class="head"><span class="num">01</span><h2>Tasarım pusulası</h2></div>
+        <p>
+          Her tasarım kararı üç histen birine hizmet eder. Bir öneri bu üçünden hiçbirini
+          güçlendirmiyorsa oyuna girmez.
+        </p>
+        <dl class="figures">
+          <div>
+            <dt>Hız</dt>
+            <dd>Anında</dd>
+          </div>
+          <div>
+            <dt>Kazanç</dt>
+            <dd>Görünür</dd>
+          </div>
+          <div>
+            <dt>Büyüme</dt>
+            <dd>Devredilen iş</dd>
+          </div>
+        </dl>
+        <p>
+          <strong>Hız:</strong> hiçbir eylem bekletmez. Balta hemen vurur, tohum 5 saniyede ağaç olur,
+          satış anında paraya döner. Menü değil, dünyanın içinde eylem.
+        </p>
+        <p>
+          <strong>Kazanç:</strong> para soyut bir sayaç değil, fiziksel bir nesnedir. Tezgâhta deste
+          deste birikir, oyuncuya uçar, kasadan toplanır. Her kazanç görülür ve duyulur.
+        </p>
+        <p>
+          <strong>Büyüme:</strong> ilerleme "daha çok tıklamak" değil, <em class="term">yaptığın bir işi
+          birine devretmek</em>tir. Oyuncu oduncudan patrona doğru ilerler.
+        </p>
+
+        <div class="axiom">
+          <p>Arazi bir stok değil, bir <em class="term">kapasitedir</em>.</p>
+          <p>
+            Bir kare, içindeki ağaç sayısı kadar değil, birim zamanda kaç ağaç yetiştirebildiği kadar
+            değerlidir. Bu yüzden ormanı tüketmek diye bir şey yoktur; üretim tavanına çarpmak vardır.
+            Alan almak o tavanı yükseltir.
+          </p>
+        </div>
+      </section>
+
+      <section id="dongu">
+        <div class="head"><span class="num">02</span><h2>Çekirdek döngü</h2></div>
+        <p>
+          Oyuncunun ilk dakikadan son dakikaya kadar tekrarladığı halka bu. Otomasyon bu halkayı
+          değiştirmez — sadece halkanın adımlarını tek tek oyuncunun elinden alır.
+        </p>
+        <ol class="loop">
+          <li><b>Kes</b><span>Olgun ağaca yaklaş, balta otomatik sallanır. Ağaç devrilir, kütükler ve bir tohum düşer.</span></li>
+          <li><b>Topla</b><span>Yerdeki kütükler sırt yığınına uçar. Kapasite dolunca toplama durur.</span></li>
+          <li><b>Ek</b><span>Boşalan yuvaya tohum bırak. 5 saniye sonra yerinde yeni bir ağaç durur.</span></li>
+          <li><b>Bırak</b><span>Kütükleri depoya veya doğrudan tezgâha boşalt. İşlenecekse bıçkıhaneye.</span></li>
+          <li><b>Sat</b><span>Tezgâhtaki müşteri malı alır, parayı tezgâhın para tarafına bırakır.</span></li>
+          <li><b>Büyüt</b><span>Biriken parayla bina yükselt, NPC tut, gerekiyorsa yeni alan aç.</span></li>
+        </ol>
+        <p>
+          Bu altı adımın beşi devredilebilir. Devredilen her adım oyuncunun elini bir üst kata
+          çıkarır: önce kesim, sonra dikim, sonra taşıma, en sonunda kasa toplama.
+        </p>
+      </section>
+
+      <section id="orman">
+        <div class="head"><span class="num">03</span><h2>Orman: yuva, tohum, dikim</h2></div>
+        <p>
+          Ormanın kalbi <em class="term">ağaç yuvası</em> kavramı. Her karede sabit sayıda yuva vardır;
+          bir yuva ya boştur, ya fidan taşır, ya da olgun bir ağaç. Ağaç kesilince yuva boşalır ve
+          <strong>kendiliğinden dolmaz.</strong>
+        </p>
+
+        <h3>Tohum döngüsü</h3>
+        <ul>
+          <li>Devrilen her ağaç kütüklerin yanında <strong>1 tohum</strong> düşürür. Tohum sırt yığınından ayrı, küçük bir sayaçta durur.</li>
+          <li>Oyuncu boş bir yuvaya yaklaşıp tohum bırakır — kısa, tok bir dikim animasyonu.</li>
+          <li>Fidan <strong>5 saniyede</strong> olgun ağaca dönüşür (kademe arttıkça uzar).</li>
+          <li>Boş yuvalar arada <strong>rüzgârla</strong> kendiliğinden filizlenir: nadir, yavaş, tamamen bir emniyet supabı. Oyuncu tohumsuz ve parasız kalırsa oyun yine de akar.</li>
+        </ul>
+        <p>
+          Bu kurgu üç şeyi aynı anda çözer: ağaçlar sihirle geri gelmez, oyuncu asla kilitlenmez, ve
+          ormanın kendisi yönetilmesi gereken bir üretim hattına dönüşür.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <caption>Ağaç kademeleri</caption>
+            <thead>
+              <tr><th>Kademe</th><th>Nerede</th><th class="num">Büyüme</th><th class="num">Kütük</th><th class="num">Kütük değeri</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Çam</b></td><td>Başlangıç karesi</td><td class="num">5 sn</td><td class="num">5</td><td class="num cash">25</td></tr>
+              <tr><td><b>Kayın</b></td><td>1. halka</td><td class="num">7 sn</td><td class="num">7</td><td class="num cash">45</td></tr>
+              <tr><td><b>Meşe</b></td><td>2–3. halka</td><td class="num">9 sn</td><td class="num">9</td><td class="num cash">80</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Bir karenin sürdürülebilir üretimi basit bir orandır: <strong>yuva sayısı ÷ büyüme süresi</strong>.
+          Başlangıç karesi 36 yuva ve 5 saniyelik büyümeyle teorik olarak saniyede 7 ağaç besleyebilir —
+          yani darboğaz uzun süre orman değil, <strong>oyuncunun ve işçilerin elleri</strong> olur. Genişleme
+          baskısı ancak işçi ordusu bu tavana dayandığında başlar.
+        </p>
+      </section>
+
+      <section id="ekonomi">
+        <div class="head"><span class="num">04</span><h2>Değer zinciri</h2></div>
+        <p>
+          Ham kütük en ucuz üründür. Her işleme adımı malı bir üst fiyat sınıfına taşır ve kendi
+          binasını, kendi tezgâhını, kendi müşterisini getirir. Oyuncunun geliri kütük sayısıyla değil,
+          <strong>zincirin kaçıncı halkasına ulaştığıyla</strong> büyür.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <caption>Üretim zinciri</caption>
+            <thead>
+              <tr><th>Ürün</th><th>Nerede üretilir</th><th>Girdi</th><th class="num">Birim fiyat</th><th>Durum</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Kütük</b></td><td>Orman</td><td>—</td><td class="num cash">25</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Tahta</b></td><td>Bıçkıhane</td><td>1 kütük</td><td class="num cash">60</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Mobilya</b></td><td>Marangozhane</td><td>3 tahta</td><td class="num cash">240</td><td><span class="tag next">Sırada</span></td></tr>
+              <tr><td><b>İhracat sandığı</b></td><td>Yükleme iskelesi</td><td>4 mobilya</td><td class="num cash">1 200</td><td><span class="tag later">Sonra</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Her halka bir öncekinin kabaca <strong>3–4 katı</strong> değer üretir ama daha uzun sürer ve daha
+          çok işçi ister. Böylece "daha hızlı kes" ile "daha derin işle" arasında sürekli bir tercih
+          doğar.
+        </p>
+      </section>
+
+      <section id="otomasyon">
+        <div class="head"><span class="num">05</span><h2>Otomasyon merdiveni</h2></div>
+        <p>
+          Oyunun ilerleme omurgası bu tablo. Her satır, oyuncunun o ana kadar eliyle yaptığı bir işi
+          kalıcı olarak devraldığı andır — ve her devir, oyuncuya yeni bir işi yapacak zamanı verir.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <caption>İşe alım sırası</caption>
+            <thead>
+              <tr><th>NPC</th><th>Ne yapar</th><th>Oyuncudan aldığı iş</th><th>Durum</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Tezgâh Taşıyıcısı</b></td><td>Depo → tezgâh, 3'er 3'er</td><td>Tezgâhı besleme</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Satıcı</b></td><td>Tezgâhtaki müşteriye satar</td><td>Tezgâhta beklemek</td><td><span class="tag now">Var</span></td></tr>
+              <tr><td><b>Ekici</b></td><td>Boş yuvalara tohum diker</td><td>Dikim</td><td><span class="tag next">Sırada</span></td></tr>
+              <tr><td><b>Oduncu</b></td><td>Olgun ağaçları keser</td><td>Balta</td><td><span class="tag next">Sırada</span></td></tr>
+              <tr><td><b>Toplayıcı</b></td><td>Yerdeki kütüğü depoya taşır</td><td>Toplama ve taşıma</td><td><span class="tag next">Sırada</span></td></tr>
+              <tr><td><b>Kasadar</b></td><td>Tezgâh kasasını toplar</td><td>Para toplama</td><td><span class="tag later">Sonra</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Tam otomasyona ulaşan oyuncu için oyun durmaz: artık işi <strong>yönetir</strong> — kimi nereye
+          koyduğu, hangi binayı yükselttiği, ne zaman alan açtığı yeni oyun hâline gelir. Sıkılmanın
+          panzehiri, otomasyonun sonunda gelen yönetim katmanıdır.
+        </p>
+        <h3>NPC yönetim ekranı</h3>
+        <p>
+          Tek bir liste: her satırda NPC'nin görseli, görevi, seviyesi ve yükseltme maliyeti. Seviye
+          NPC'nin hızını ve taşıma kapasitesini artırır. Karmaşık bir atama sistemi yok — bir NPC bir
+          işe aittir, o işi yapar.
+        </p>
+      </section>
+
+      <section id="binalar">
+        <div class="head"><span class="num">06</span><h2>Binalar ve seviyeler</h2></div>
+        <p>
+          Binalar tek seferlik açılmaz; para verilerek seviye atlar. Her seviye üretimi artırır ve
+          binanın görselini büyütür — ilerlemenin dünyada görünür olması meselenin yarısıdır.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <caption>Bina yükseltme etkileri</caption>
+            <thead>
+              <tr><th>Bina</th><th>Sv. 1</th><th>Her seviyede</th><th class="num">Maks</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Kütük Deposu</b></td><td>20 kütük kapasite</td><td>+15 kapasite</td><td class="num">10</td></tr>
+              <tr><td><b>Bıçkıhane</b></td><td>2.4 sn / tahta</td><td>süre −%8</td><td class="num">10</td></tr>
+              <tr><td><b>Marangozhane</b></td><td>9 sn / mobilya</td><td>süre −%8</td><td class="num">10</td></tr>
+              <tr><td><b>Tezgâh</b></td><td>4 kişilik kuyruk</td><td>+1 kuyruk, fiyat +%5</td><td class="num">5</td></tr>
+              <tr><td><b>İşçi Evi</b></td><td>2 NPC hakkı</td><td>+1 NPC hakkı</td><td class="num">5</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>İşçi Evi</strong> sistemin sigortasıdır: NPC sayısını paraya değil bir binaya bağlar,
+          böylece oyuncu tek bir kaynağı sömürüp dengeyi bozamaz.
+        </p>
+      </section>
+
+      <section id="arazi">
+        <div class="head"><span class="num">07</span><h2>Arazi ve genişleme</h2></div>
+        <p>
+          Arazi 27×27 birimlik eşit karelerden oluşan bir ızgaradır. Oyuncu merkez kareyle başlar,
+          komşu kareleri satın alarak büyür. Doğu kenarı sabittir — orası yol ve pazar hattı.
+        </p>
+        <div class="axiom">
+          <p>Alan almak bir ilerleme şartı değil, bir <em class="term">tıkanma çözümüdür</em>.</p>
+          <p>
+            Oyuncu ancak işçileri mevcut karenin yetiştirebildiğinden hızlı kesmeye başladığında —
+            yani müşteri talebini karşılayamadığında — yeni alan açar. Bu yüzden alan fiyatları
+            bilinçli olarak yüksektir ve oyunun ilk yarısında hiç alan almadan ilerlemek mümkündür.
+          </p>
+        </div>
+        <p>Bir kare iki şey birden getirir:</p>
+        <ul>
+          <li><strong>Kapasite:</strong> +36 ağaç yuvası, yani daha yüksek bir üretim tavanı.</li>
+          <li><strong>Değer:</strong> o karede yetişen tür daha pahalıdır — kayın, sonra meşe.</li>
+        </ul>
+        <div class="table-wrap">
+          <table>
+            <caption>Halka maliyetleri (denge için taslak)</caption>
+            <thead>
+              <tr><th>Halka</th><th>Kare</th><th>Tür</th><th class="num">Maliyet</th><th>Ne zaman mantıklı</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">1</td><td>Kuzey · Güney · Batı</td><td>Kayın</td><td class="num cash">2 500</td><td>3+ oduncu çalışırken</td></tr>
+              <tr><td class="num">2</td><td>Köşeler · uzak batı</td><td>Meşe</td><td class="num cash">12 000</td><td>Marangozhane açıkken</td></tr>
+              <tr><td class="num">3</td><td>Uzak köşeler</td><td>Meşe</td><td class="num cash">40 000</td><td>İhracat hattı kurulduğunda</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tempo">
+        <div class="head"><span class="num">08</span><h2>İlk on dakika</h2></div>
+        <p>
+          Açılış temposu Forest Hustle ritmindedir: oyuncu ilk yarım dakikada para kazandığını görür,
+          ilk beş dakikada birine iş devretmiş olur. Öğretici yoktur — dünya kendini öğretir.
+        </p>
+        <ol class="beats">
+          <li><time>0:00</time><span><b>İlk kesim</b>Oyuncu ağacın yanına yürür, balta kendiliğinden sallanır. Ağaç devrilir, kütükler sırta uçar.</span></li>
+          <li><time>0:20</time><span><b>İlk satış</b>Tezgâhta bekleyen müşteri kütükleri alır, parayı tezgâha bırakır. Oyuncu parayı toplar.</span></li>
+          <li><time>0:45</time><span><b>İlk tohum</b>Boşalan yuva parlar. Oyuncu tohumu bırakır, 5 saniye sonra ağaç geri gelir.</span></li>
+          <li><time>2:00</time><span><b>Depo</b>Kütük deposu kurulur; artık tek tek tezgâha taşımak gerekmez.</span></li>
+          <li><time>3:30</time><span><b>İlk işçi</b>Tezgâh taşıyıcısı işe alınır. Oyuncu ilk kez bir işi devreder.</span></li>
+          <li><time>5:00</time><span><b>Bıçkıhane</b>Tahta üretimi açılır, birim fiyat iki katına çıkar.</span></li>
+          <li><time>8:00</time><span><b>Ekici ve Oduncu</b>Orman kendi kendine dönmeye başlar; oyuncu üretimi izler ve yükseltir.</span></li>
+        </ol>
+      </section>
+
+      <section id="arayuz">
+        <div class="head"><span class="num">09</span><h2>Arayüz</h2></div>
+        <p>
+          Dikey telefon önceliklidir. Sol alt köşe hareket içindir ve boş kalır; sağ alt köşe
+          başparmağın doğal durduğu yerdir, aksiyon butonları oradadır.
+        </p>
+        <h3>Sürekli görünen</h3>
+        <ul>
+          <li><strong>Üst şerit:</strong> para, sırt kapasitesi, depo stoğu ve tohum sayacı — tek satır.</li>
+          <li><strong>Seviye çubuğu:</strong> üst şeridin hemen altında, ince.</li>
+          <li><strong>Sağ alt:</strong> Yetenek, İşçiler ve Harita butonları.</li>
+        </ul>
+        <h3>Harita</h3>
+        <p>
+          Yukarıdan bakış: hangi kareler açık, hangi yuvalar boş, hangi bina hangi seviyede. Oyuncunun
+          "işim ne durumda" sorusunu tek bakışta cevaplar. Etkileşim gerekmez — sadece durum gösterir,
+          dokununca kamera oraya kayar.
+        </p>
+        <h3>Geri bildirim kuralları</h3>
+        <ul>
+          <li>Her kazanç ekranda uçan bir nesneyle görünür: kütük, banknot, tohum.</li>
+          <li>Her satın alma karesi dolarken ilerleme dolgusu ve ses verir.</li>
+          <li>Boş ağaç yuvası hafifçe parlar — oyuncuya "burada iş var" der.</li>
+          <li>Bildirimler oyunun ortasını kapatmaz, üstten akar.</li>
+        </ul>
+      </section>
+
+      <section id="kayit">
+        <div class="head"><span class="num">10</span><h2>Kayıt ve çevrimdışı</h2></div>
+        <p>
+          Şu anda oyunun kaydı yok: sayfa yenilenince her şey sıfırlanıyor. Seviyeli binalar ve uzun
+          vadeli büyüme bu olmadan anlamsız — bu yüzden kayıt, zincirin geri kalanından önce gelir.
+        </p>
+        <ul>
+          <li><strong>Ne saklanır:</strong> para, seviye, yetenekler, açık kareler, bina seviyeleri, NPC'ler, depo ve tezgâh stokları, yuva durumları.</li>
+          <li><strong>Nasıl:</strong> tarayıcı belleğinde tek bir sürüm damgalı kayıt; her 5 saniyede ve her önemli olayda yazılır.</li>
+          <li><strong>Çevrimdışı üretim:</strong> NPC'ler oyun kapalıyken de çalışmış sayılır, en fazla <strong>8 saat</strong> boyunca ve normal hızın <strong>%50'si</strong> ile.</li>
+          <li><strong>Dönüş ekranı:</strong> "Yokluğunda 3 saat 20 dakika çalıştılar · +4 250 para" — tek dokunuşla toplanır. Geri dönme sebebi budur.</li>
+        </ul>
+      </section>
+
+      <section id="yolharitasi">
+        <div class="head"><span class="num">11</span><h2>Yol haritası</h2></div>
+        <p>
+          Sıra bilinçli: önce ilerlemeyi kaybetmeyi durdur, sonra ormanı doğru kur, sonra işçileri
+          çoğalt, en sonunda zinciri uzat.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <caption>Uygulama sırası</caption>
+            <thead>
+              <tr><th class="num">#</th><th>İş</th><th>Neden bu sırada</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">1</td><td><b>Kayıt + çevrimdışı kazanç</b></td><td>Kalıcılık olmadan seviyeli bina ve uzun vadeli büyüme anlamsız.</td></tr>
+              <tr><td class="num">2</td><td><b>Yuva + tohum + dikim sistemi</b></td><td>Anında yenilenmeyi kaldırır, arazinin anlamını kurar.</td></tr>
+              <tr><td class="num">3</td><td><b>Ekici, Oduncu, Toplayıcı NPC</b></td><td>Otomasyon merdiveninin gövdesi; idle hissi buradan gelir.</td></tr>
+              <tr><td class="num">4</td><td><b>Bina seviyeleri + İşçi Evi</b></td><td>Paranın uzun vadeli harcama yeri; büyüme buradan okunur.</td></tr>
+              <tr><td class="num">5</td><td><b>Harita ve İşçiler ekranı</b></td><td>Sistem büyüdükçe durumu görmek zorunlu hâle gelir.</td></tr>
+              <tr><td class="num">6</td><td><b>Marangozhane (mobilya)</b></td><td>Zincirin üçüncü halkası; gelir tavanını kırar.</td></tr>
+              <tr><td class="num">7</td><td><b>Alan fiyatlarının yeniden dengelenmesi</b></td><td>Genişleme ancak diğer sistemler oturunca doğru fiyatlanabilir.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>v1 kapsamı dışında</h3>
+        <p>
+          İhracat iskelesi, hava/mevsim, çoklu harita, prestij, günlük görev, sosyal özellikler.
+          Bunlar oyunu ayakta tutan şeyler değil; ilk sürüm yukarıdaki yedi maddeyle tamamlanır.
+        </p>
+      </section>
+
+      <section id="acik">
+        <div class="head"><span class="num">12</span><h2>Açık kararlar</h2></div>
+        <p>Bu dört başlık netleşmeden 2. ve 3. maddeler yazılmamalı.</p>
+        <ul class="open">
+          <li><b>Tohum nereden gelir?</b><span>Öneri: her devrilen ağaç 1 tohum düşürür — döngü kendi kendini besler, ayrı bir ekonomi gerekmez. Alternatifleri: parayla satın alma veya sınırsız tohum.</span></li>
+          <li><b>Dikim nasıl tetiklenir?</b><span>Öneri: boş yuvaya yaklaşınca otomatik — Forest Hustle'ın "yürü ve olsun" hissi. Alternatifi: butonla bilinçli dikim.</span></li>
+          <li><b>Harita ne kadar ileri gitsin?</b><span>Öneri: yalnızca durum gösteren, dokununca kamerayı taşıyan basit bir üstten görünüm. Alternatifi: haritadan doğrudan yönetim.</span></li>
+          <li><b>Çevrimdışı kazanç oranı</b><span>Öneri: en fazla 8 saat, normal hızın %50'si. Cömert olursa aktif oynamanın anlamı azalır, cimri olursa geri dönme sebebi kalmaz.</span></li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<footer>
+  <span>Forest Trader</span>
+  <span>Tasarım dokümanı · v1 taslak</span>
+  <span>Moonborne Games</span>
+</footer>
