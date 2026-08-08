@@ -105,9 +105,16 @@ interface CustomerData {
   currentClip: string;
 }
 
-interface CarrierData {
+// Sahnedeki tüm çalışan NPC'lerin ortak yanı: bir grup, animasyonlu bir görsel
+// ve o an sürülen klip. Klip geçişi ve yürüme mantığı bu temel üzerinden
+// paylaşılır.
+interface WorkerBase {
   group: THREE.Group;
   visual: THREE.Group;
+  currentClip: string;
+}
+
+interface CarrierData extends WorkerBase {
   type: 'log' | 'plank';
   // 'loading'/'unloading': mal tek tek uçarak sırta binerken veya tezgâha
   // inerken beklenen ara durumlar. 'idle': iş yokken kaynağın çevresinde dolanır.
@@ -124,7 +131,25 @@ interface CarrierData {
   // Boştayken gidilen geçici nokta ve o noktada verilen mola.
   idleTarget: THREE.Vector3 | null;
   idleWait: number;
-  currentClip: string;
+}
+
+// Ormanda çalışan NPC'ler. Üçü de aynı iskeleti kullanır; farkları hedef
+// seçimi ve hedefe varınca yaptıkları iştir.
+type ForestJob = 'planter' | 'chopper' | 'hauler';
+
+interface ForestWorkerData extends WorkerBase {
+  job: ForestJob;
+  state: 'seeking' | 'working' | 'delivering' | 'idle';
+  targetTree: TreeData | null;
+  targetLog: GroundLog | null;
+  workClock: number;
+  // Toplayıcının sırt yığını.
+  stack: THREE.Group;
+  stackMeshes: THREE.Object3D[];
+  carried: number;
+  carriedValue: number;
+  idleTarget: THREE.Vector3 | null;
+  idleWait: number;
 }
 
 interface TweenData {
@@ -1260,6 +1285,9 @@ const ALL_RESERVED_POSITIONS: { position: THREE.Vector3; radius: number }[] = [
   { position: plankCarrierBuildPosition, radius: 2.9 },
   { position: new THREE.Vector3(COMPOUND_EAST, 0, 6.5), radius: 4.2 },
   { position: new THREE.Vector3(COMPOUND_EAST, 0, -6.5), radius: 4.2 },
+  { position: new THREE.Vector3(-21, 0, 8.5), radius: 2.9 },
+  { position: new THREE.Vector3(-21, 0, 0), radius: 2.9 },
+  { position: new THREE.Vector3(-21, 0, -8.5), radius: 2.9 },
 ];
 
 const TIER_MODELS = ['tree-near', 'tree-mid', 'tree-deep'] as const;
@@ -1633,6 +1661,14 @@ const createStationAndUnlockZones = () => {
     { type: 'money', amount: 25 },
     spawnLogCarrier,
     'Kütük Taşıyıcısı işe alındı!',
+  );
+  createBuildZone(
+    'planter',
+    forestWorkerHomes.planter,
+    new THREE.Vector3(),
+    { type: 'money', amount: 120 },
+    hirePlanter,
+    'Ekici işe alındı!',
   );
   createBuildZone(
     'sawmill',
@@ -2926,17 +2962,17 @@ const updateClerk = (delta: number) => {
 
 // Taşıyıcılar da iskeletli modeller; yürürken 'walk', boşta beklerken 'idle'
 // klibi sürülür.
-const playCarrierClip = (carrier: CarrierData, clipName: string) => {
-  if (carrier.currentClip === clipName) return;
-  const modelName = carrier.visual.userData.modelName as Parameters<typeof findClip>[0];
-  const mixer = carrier.visual.userData.mixer as THREE.AnimationMixer;
+const playWorkerClip = (worker: WorkerBase, clipName: string) => {
+  if (worker.currentClip === clipName) return;
+  const modelName = worker.visual.userData.modelName as Parameters<typeof findClip>[0];
+  const mixer = worker.visual.userData.mixer as THREE.AnimationMixer;
   const next = mixer.clipAction(findClip(modelName, clipName));
-  const previous = carrier.currentClip
-    ? mixer.clipAction(findClip(modelName, carrier.currentClip))
+  const previous = worker.currentClip
+    ? mixer.clipAction(findClip(modelName, worker.currentClip))
     : null;
   next.reset().setEffectiveWeight(1).fadeIn(0.18).play();
   previous?.fadeOut(0.18);
-  carrier.currentClip = clipName;
+  worker.currentClip = clipName;
 };
 
 // Sırt yığını oyuncununkiyle birebir aynı: yatay kütükler/tahtalar kat kat.
@@ -3058,16 +3094,333 @@ const pickCarrierIdleTarget = (carrier: CarrierData) => {
   return target;
 };
 
-const moveCarrierTowards = (carrier: CarrierData, target: THREE.Vector3, delta: number, speed: number) => {
-  const direction = target.clone().sub(carrier.group.position);
+// Hedefe doğru bir adım atar ve kalan mesafeyi döndürür.
+const moveWorkerTowards = (worker: WorkerBase, target: THREE.Vector3, delta: number, speed: number) => {
+  const direction = target.clone().sub(worker.group.position);
   direction.y = 0;
   const distance = direction.length();
   if (distance < 0.06) return 0;
   direction.normalize();
-  carrier.group.position.addScaledVector(direction, Math.min(distance, speed * delta));
-  carrier.group.rotation.y = Math.atan2(-direction.x, -direction.z);
+  worker.group.position.addScaledVector(direction, Math.min(distance, speed * delta));
+  worker.group.rotation.y = Math.atan2(-direction.x, -direction.z);
   return distance;
 };
+
+// ---------------------------------------------------------------------------
+// Orman işçileri: Ekici, Oduncu, Toplayıcı
+// ---------------------------------------------------------------------------
+// Otomasyon merdiveninin gövdesi. Üçü birlikte orman → depo hattını tamamen
+// oyuncunun elinden alır: Ekici boş yuvalara tohum eker, Oduncu olgun ağaçları
+// keser, Toplayıcı yerdeki kütükleri depoya taşır.
+const forestWorkers: ForestWorkerData[] = [];
+
+const WORKER_SPEED = 3.0;
+const PLANT_SECONDS = 0.7;
+const CHOP_SECONDS = 0.85;
+const PICKUP_SECONDS = 0.3;
+// Toplayıcı yetişemezse yer kütükle dolmasın diye Oduncu'ya tavan konur.
+const GROUND_LOG_LIMIT = 60;
+
+const workerHome = (worker: ForestWorkerData) =>
+  worker.job === 'hauler' ? stationBuildPosition : forestWorkerHomes[worker.job];
+
+const forestWorkerHomes: Record<ForestJob, THREE.Vector3> = {
+  planter: new THREE.Vector3(-21, 0, 8.5),
+  chopper: new THREE.Vector3(-21, 0, 0),
+  hauler: new THREE.Vector3(-21, 0, -8.5),
+};
+
+const isWorkablePlot = (tree: TreeData) => plots[tree.plotIndex]?.unlocked ?? false;
+
+// Aynı ağaca iki işçi koşmasın diye hedefler paylaşılmaz.
+const isTreeClaimed = (tree: TreeData, self: ForestWorkerData) =>
+  forestWorkers.some((worker) => worker !== self && worker.targetTree === tree);
+
+const nearestTreeFor = (worker: ForestWorkerData, stage: TreeStage) => {
+  let best: TreeData | null = null;
+  let bestDistance = Infinity;
+  for (const tree of trees) {
+    if (tree.stage !== stage || !tree.group.visible || !isWorkablePlot(tree)) continue;
+    if (isTreeClaimed(tree, worker)) continue;
+    const distance = tree.group.position.distanceToSquared(worker.group.position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = tree;
+    }
+  }
+  return best;
+};
+
+const nearestFreeLog = (worker: ForestWorkerData) => {
+  let best: GroundLog | null = null;
+  let bestDistance = Infinity;
+  for (const log of groundLogs) {
+    if (!log.settled || log.collecting) continue;
+    const distance = log.mesh.position.distanceToSquared(worker.group.position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = log;
+    }
+  }
+  return best;
+};
+
+const rebuildWorkerStack = (worker: ForestWorkerData) => {
+  for (const mesh of worker.stackMeshes) worker.stack.remove(mesh);
+  worker.stackMeshes.length = 0;
+  for (let index = 0; index < worker.carried; index += 1) {
+    const item = makeLogMesh(0.78);
+    item.position.set(0, CARRY_BASE_Y + index * CARRY_STEP_Y, 0);
+    item.rotation.x = index % 2 === 0 ? 0.025 : -0.025;
+    worker.stack.add(item);
+    worker.stackMeshes.push(item);
+  }
+};
+
+// Boştaki işçi de taşıyıcılar gibi çalışma alanının çevresinde dolanır.
+const pickWorkerIdleTarget = (worker: ForestWorkerData) => {
+  const home = workerHome(worker);
+  const offset = worker.group.position.clone().sub(home);
+  const angle = Math.atan2(offset.z, offset.x)
+    + (0.35 + seededRandom() * 0.85) * (seededRandom() < 0.5 ? -1 : 1);
+  const radius = IDLE_RING_MIN + seededRandom() * (IDLE_RING_MAX - IDLE_RING_MIN);
+  const target = home.clone().add(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+  clampToCompound(target);
+  return target;
+};
+
+const goIdle = (worker: ForestWorkerData) => {
+  worker.state = 'idle';
+  worker.targetTree = null;
+  worker.targetLog = null;
+  worker.idleTarget = null;
+  worker.idleWait = 0.4 + seededRandom() * 1.1;
+};
+
+const spawnForestWorker = (job: ForestJob) => {
+  const group = new THREE.Group();
+  group.position.copy(forestWorkerHomes[job]).add(new THREE.Vector3(0, 0, 2));
+  const visual = createCustomerVisual(job === 'planter' ? 1 : job === 'chopper' ? 4 : 2);
+  group.add(visual);
+  const stack = new THREE.Group();
+  stack.position.set(0, 0, CARRY_BACK_OFFSET_Z);
+  group.add(stack);
+  world.add(group);
+  forestWorkers.push({
+    group,
+    visual,
+    currentClip: '',
+    job,
+    state: 'seeking',
+    targetTree: null,
+    targetLog: null,
+    workClock: 0,
+    stack,
+    stackMeshes: [],
+    carried: 0,
+    carriedValue: 0,
+    idleTarget: null,
+    idleWait: 0,
+  });
+};
+
+function hirePlanter() {
+  spawnForestWorker('planter');
+  createBuildZone(
+    'chopper',
+    forestWorkerHomes.chopper,
+    new THREE.Vector3(),
+    { type: 'money', amount: 260 },
+    hireChopper,
+    'Oduncu işe alındı!',
+  );
+  showToast('Ekici işe alındı! Boş yuvalara tohum ekiyor.');
+}
+
+function hireChopper() {
+  spawnForestWorker('chopper');
+  createBuildZone(
+    'hauler',
+    forestWorkerHomes.hauler,
+    new THREE.Vector3(),
+    { type: 'money', amount: 420 },
+    hireHauler,
+    'Toplayıcı işe alındı!',
+  );
+  showToast('Oduncu işe alındı! Olgun ağaçları kesiyor.');
+}
+
+function hireHauler() {
+  spawnForestWorker('hauler');
+  showToast('Toplayıcı işe alındı! Kütükleri depoya taşıyor.');
+}
+
+const updateForestWorkers = (delta: number) => {
+  for (const worker of forestWorkers) {
+    (worker.visual.userData.mixer as THREE.AnimationMixer).update(delta);
+
+    if (worker.state === 'idle') {
+      if (worker.idleWait > 0) {
+        worker.idleWait = Math.max(0, worker.idleWait - delta);
+        playWorkerClip(worker, 'idle');
+        continue;
+      }
+      if (!worker.idleTarget) worker.idleTarget = pickWorkerIdleTarget(worker);
+      playWorkerClip(worker, 'walk');
+      if (moveWorkerTowards(worker, worker.idleTarget, delta, 1.35) < 0.12) {
+        worker.idleTarget = null;
+        worker.idleWait = 0.7 + seededRandom() * 1.4;
+      }
+      // Boştayken de iş çıkıp çıkmadığına bakılır.
+      worker.workClock += delta;
+      if (worker.workClock < 0.6) continue;
+      worker.workClock = 0;
+      worker.state = 'seeking';
+      continue;
+    }
+
+    if (worker.job === 'hauler') {
+      updateHauler(worker, delta);
+      continue;
+    }
+
+    // Ekici ve Oduncu: hedef ağaç seç, yanına git, işini yap.
+    if (worker.state === 'seeking') {
+      if (worker.job === 'planter' && state.seeds <= 0) {
+        goIdle(worker);
+        continue;
+      }
+      if (worker.job === 'chopper' && groundLogs.length >= GROUND_LOG_LIMIT) {
+        goIdle(worker);
+        continue;
+      }
+      worker.targetTree = nearestTreeFor(worker, worker.job === 'planter' ? 'empty' : 'mature');
+      if (!worker.targetTree) {
+        goIdle(worker);
+        continue;
+      }
+      worker.state = 'working';
+      worker.workClock = 0;
+      continue;
+    }
+
+    const tree = worker.targetTree;
+    // Hedef başkası tarafından değiştirildiyse (oyuncu kestiyse) yeniden ara.
+    if (!tree || tree.stage !== (worker.job === 'planter' ? 'empty' : 'mature')) {
+      worker.targetTree = null;
+      worker.state = 'seeking';
+      continue;
+    }
+    const distance = moveWorkerTowards(worker, tree.group.position, delta, WORKER_SPEED);
+    if (distance > 1.4) {
+      playWorkerClip(worker, 'walk');
+      continue;
+    }
+
+    worker.workClock += delta;
+    if (worker.job === 'planter') {
+      playWorkerClip(worker, 'idle');
+      if (worker.workClock < PLANT_SECONDS) continue;
+      worker.workClock = 0;
+      if (state.seeds > 0) {
+        state.seeds -= 1;
+        plantSeed(tree);
+        updateUI();
+      }
+      worker.targetTree = null;
+      worker.state = 'seeking';
+    } else {
+      playWorkerClip(worker, 'attack-melee-right');
+      if (worker.workClock < CHOP_SECONDS) continue;
+      worker.workClock = 0;
+      hitTree(tree);
+      if (tree.stage !== 'mature') {
+        worker.targetTree = null;
+        worker.state = 'seeking';
+      }
+    }
+  }
+};
+
+// Toplayıcı: yerdeki kütükleri sırtına alır, dolunca depoya boşaltır.
+function updateHauler(worker: ForestWorkerData, delta: number) {
+  if (worker.state === 'delivering') {
+    const distance = moveWorkerTowards(worker, stationBuildPosition, delta, WORKER_SPEED);
+    if (distance > 2.6) {
+      playWorkerClip(worker, 'walk');
+      return;
+    }
+    playWorkerClip(worker, 'idle');
+    worker.workClock += delta;
+    if (worker.workClock < PICKUP_SECONDS) return;
+    worker.workClock = 0;
+    if (worker.carried <= 0) {
+      worker.state = 'seeking';
+      return;
+    }
+    const perLog = worker.carriedValue / worker.carried;
+    worker.carried -= 1;
+    worker.carriedValue = Math.max(0, worker.carriedValue - perLog);
+    rebuildWorkerStack(worker);
+    state.stock += 1;
+    state.stockValue += perLog;
+    rebuildStationPiles();
+    rebuildTraderStock();
+    audio.unload();
+    updateUI();
+    return;
+  }
+
+  if (worker.state === 'seeking') {
+    if (worker.carried >= state.carrierCapacity) {
+      worker.state = 'delivering';
+      worker.workClock = 0;
+      return;
+    }
+    const log = nearestFreeLog(worker);
+    if (!log) {
+      // Elinde mal varsa boşaltmaya gider, yoksa dolanır.
+      if (worker.carried > 0) {
+        worker.state = 'delivering';
+        worker.workClock = 0;
+      } else {
+        goIdle(worker);
+      }
+      return;
+    }
+    log.collecting = true;
+    worker.targetLog = log;
+    worker.state = 'working';
+    worker.workClock = 0;
+    return;
+  }
+
+  const log = worker.targetLog;
+  if (!log || !groundLogs.includes(log)) {
+    worker.targetLog = null;
+    worker.state = 'seeking';
+    return;
+  }
+  const distance = moveWorkerTowards(worker, log.mesh.position, delta, WORKER_SPEED);
+  if (distance > 1.1) {
+    playWorkerClip(worker, 'walk');
+    return;
+  }
+  playWorkerClip(worker, 'idle');
+  worker.workClock += delta;
+  if (worker.workClock < PICKUP_SECONDS) return;
+  worker.workClock = 0;
+  const index = groundLogs.indexOf(log);
+  if (index >= 0) groundLogs.splice(index, 1);
+  scene.remove(log.mesh);
+  worker.carried += 1;
+  worker.carriedValue += log.value;
+  rebuildWorkerStack(worker);
+  bounceGroup(worker.stack);
+  audio.pickup();
+  worker.targetLog = null;
+  worker.state = 'seeking';
+}
 
 // Bir mal alma/bırakma arası bekleme ve kaynakta mal bitince yola çıkmadan
 // önce verilen tolerans.
@@ -3090,12 +3443,12 @@ const updateCarriers = (delta: number) => {
       }
       if (carrier.idleWait > 0) {
         carrier.idleWait = Math.max(0, carrier.idleWait - delta);
-        playCarrierClip(carrier, 'idle');
+        playWorkerClip(carrier, 'idle');
         continue;
       }
       if (!carrier.idleTarget) carrier.idleTarget = pickCarrierIdleTarget(carrier);
-      playCarrierClip(carrier, 'walk');
-      const remaining = moveCarrierTowards(carrier, carrier.idleTarget, delta, 1.35);
+      playWorkerClip(carrier, 'walk');
+      const remaining = moveWorkerTowards(carrier, carrier.idleTarget, delta, 1.35);
       if (remaining < 0.12) {
         carrier.idleTarget = null;
         carrier.idleWait = 0.8 + seededRandom() * 1.8;
@@ -3105,7 +3458,7 @@ const updateCarriers = (delta: number) => {
 
     // Kaynakta yükleme: mallar tek tek, oyuncunun toplama animasyonuyla sırta biner.
     if (carrier.state === 'loading') {
-      playCarrierClip(carrier, 'idle');
+      playWorkerClip(carrier, 'idle');
       const onBoard = carrier.carried + carrier.pending;
       if (onBoard >= state.carrierCapacity) {
         if (carrier.pending === 0) {
@@ -3147,7 +3500,7 @@ const updateCarriers = (delta: number) => {
 
     // Tezgâhta boşaltma: mallar tek tek tezgâhın mal tarafına iner.
     if (carrier.state === 'unloading') {
-      playCarrierClip(carrier, 'idle');
+      playWorkerClip(carrier, 'idle');
       if (carrier.carried <= 0) {
         carrier.state = 'toSource';
         continue;
@@ -3181,9 +3534,9 @@ const updateCarriers = (delta: number) => {
         carrier.state = 'unloading';
         carrier.loadClock = CARRIER_LOAD_INTERVAL;
       }
-      playCarrierClip(carrier, 'idle');
+      playWorkerClip(carrier, 'idle');
     } else {
-      playCarrierClip(carrier, 'walk');
+      playWorkerClip(carrier, 'walk');
       direction.normalize();
       carrier.group.position.addScaledVector(direction, delta * 3.2);
       carrier.group.rotation.y = Math.atan2(-direction.x, -direction.z);
@@ -3455,6 +3808,7 @@ const animate = () => {
     updateTrader(delta);
     updateClerk(delta);
     updateCarriers(delta);
+    updateForestWorkers(delta);
     updateCustomers(delta);
   }
   updateTweens(delta);
@@ -3484,6 +3838,7 @@ const animate = () => {
 };
 
 animate();
+
 
 
 
